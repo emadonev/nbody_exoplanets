@@ -1,6 +1,7 @@
 import numpy as np
 import tools
 
+
 class WisdomHolman(object):
     def __init__(self):
         self.particles = None
@@ -8,116 +9,147 @@ class WisdomHolman(object):
         self.tf = None
         self.dt = None
         self.central = 0
-    
+
     def bind(self, particles, t0, tf, dt):
         self.particles = particles
-        self.t0 = t0
-        self.tf = tf
-        self.dt = dt
-
-        # pick central body: first active star (ptype==0) else most massive active
-        stars = particles.star_indices
-        if stars.size > 0:
-            self.central = int(stars[0])
-        else:
-            active = particles.active_indices
-            self.central = int(active[np.argmax(particles.masses[active])])
+        self.t0 = float(t0)
+        self.tf = float(tf)
+        self.dt = float(dt)
+        self._refresh_active_order()
 
     def propagate(self):
-        # kick for dt/2 using acceleration at t
-        self._kick(0.5 * self.dt)
-        # drift for dt
-        self._drift(self.dt)
-        # second kick
-        self._kick(0.5*self.dt)
+        if self.particles is None:
+            raise RuntimeError("integrator is not bound to particles")
 
-    def _kick(self, h:float):
+        self._refresh_active_order()
+        if self.order.size <= 1:
+            return
+
+        x_cart = self._get_active_cart()
+        x_jac = tools.cart2jacobi(x_cart, self.masses_ord, self.order.size, self.eta)
+
+        # Drift-Kick-Drift (DKD)
+        x_jac = self._drift_jacobi(x_jac, 0.5 * self.dt)
+        x_cart_mid = tools.jacobi2cart(x_jac, self.masses_ord, self.order.size, self.eta)
+
+        jac_acc = self.compute_accel(x_cart_mid, x_jac)
+        N = self.order.size
+        jac_vel = x_jac[3 * N :].reshape(N, 3)
+        jac_vel[1:] += self.dt * jac_acc[1:]
+        x_jac[3 * N :] = jac_vel.reshape(-1)
+
+        x_jac = self._drift_jacobi(x_jac, 0.5 * self.dt)
+        x_cart_new = tools.jacobi2cart(x_jac, self.masses_ord, self.order.size, self.eta)
+        self._set_active_cart(x_cart_new)
+
+    def _refresh_active_order(self):
         p = self.particles
-        c = self.central
-        idx = self.particles.planet_indices
-        r = self.particles.pos[idx] - self.particles.pos[self.central]
-        v = self.particles.vel[idx] - self.particles.vel[self.central]
+        active = p.active_indices
+        if active.size == 0:
+            self.order = np.zeros(0, dtype=int)
+            self.inv_order = {}
+            self.masses_ord = np.zeros(0, dtype=float)
+            self.eta = np.zeros(0, dtype=float)
+            return
 
-        #??
-        # heliocentric positions/velocities
-        r = p.pos[idx] - p.pos[c]
-        v = p.vel[idx] - p.vel[c]
+        if self.central not in active:
+            stars = p.star_indices
+            if stars.size > 0:
+                star_active = stars[np.isin(stars, active)]
+                if star_active.size > 0:
+                    self.central = int(star_active[0])
+                else:
+                    self.central = int(active[np.argmax(p.masses[active])])
+            else:
+                self.central = int(active[np.argmax(p.masses[active])])
 
-        # compute mutual accelerations among planets
-        a = np.zeros_like(r)
-        for ii in range(idx.size):
-            ri = r[ii]
-            for jj in range(idx.size):
-                if jj == ii:
-                    continue
-                rj = r[jj]
-                dr = rj - ri
-                d3 = np.linalg.norm(dr) ** 3
-                if d3 == 0:
-                    continue
-                a[ii] += p.g * p.masses[idx[jj]] * dr / d3
+        others = active[active != self.central]
+        self.order = np.concatenate(([self.central], others)).astype(int)
+        self.inv_order = {int(idx): i for i, idx in enumerate(self.order)}
+        self.masses_ord = p.masses[self.order].astype(float)
+        self.eta = np.cumsum(self.masses_ord)
 
-        # update heliocentric velocities
-        v = v + a * h
+    def _get_active_cart(self):
+        pos = self.particles.pos[self.order]
+        vel = self.particles.vel[self.order]
+        return np.concatenate([pos.reshape(-1), vel.reshape(-1)])
 
-        # write back to barycentric velocities (central v held fixed)
-        p.vel[idx] = p.vel[c] + v
-    
-    def _drift(self, h:float):
-        # propagate each body assuming Keplerian motion
-        for i in range(1, self.particles.N):
-            p = self.particles
-            c = self.central
+    def _set_active_cart(self, x_cart):
+        N = self.order.size
+        pos = x_cart[: 3 * N].reshape(N, 3)
+        vel = x_cart[3 * N :].reshape(N, 3)
+        self.particles.pos[self.order] = pos
+        self.particles.vel[self.order] = vel
 
-            idx = p.planet_indices
-            if idx.size == 0:
-                return
+    def _drift_jacobi(self, x_jac, h):
+        x_jac = np.asarray(x_jac, dtype=float).copy().reshape(-1)
+        N = self.order.size
 
-            r0 = p.pos[idx] - p.pos[c]
-            v0 = p.vel[idx] - p.vel[c]
+        jac_pos = x_jac[: 3 * N].reshape(N, 3)
+        jac_vel = x_jac[3 * N :].reshape(N, 3)
 
-            # per-planet mu
-            mu = p.g * (p.masses[c] + p.masses[idx])
+        # Coordinate 0 is the system barycenter and drifts linearly.
+        jac_pos[0] = jac_pos[0] + h * jac_vel[0]
 
-            r1 = np.empty_like(r0)
-            v1 = np.empty_like(v0)
-            for k in range(idx.size):
-                r1[k], v1[k] = tools.propagate_kepler_universal(r0[k], v0[k], h, mu[k])
+        m0 = self.masses_ord[0]
+        for i in range(1, N):
+            mu_i = self.particles.g * m0 * self.eta[i] / self.eta[i - 1]
+            r1, v1 = tools.propagate_kepler_universal(jac_pos[i], jac_vel[i], h, mu_i)
+            jac_pos[i] = r1
+            jac_vel[i] = v1
 
-            p.pos[idx] = p.pos[c] + r1
-            p.vel[idx] = p.vel[c] + v1
-    
-    '''
-    def compute_acc(self):
-        # for each body
-        for i in range(1, self.particles.N):
-            # first part of formula
-            r0i = self.cart[i*3: (i+1)*3] - self.cart[0:3] # this it the zero vector compared to the center
+        x_jac[: 3 * N] = jac_pos.reshape(-1)
+        x_jac[3 * N :] = jac_vel.reshape(-1)
+        return x_jac
 
-            self.accel[i*3: (i+1)*3] = self.particles.G*self.particles.masses[0]*self.eta[i]/self.eta[i-1]*\
-            (self.jacobi[i*3:(i+1)*3]/np.linalg.norm(self.jacobi[i*3:(i+1)*3])**3-\
-             r0i/np.linalg.norm(r0i)**3)
-            
-            # second part of formula
+    def _inv_r3(self, vec):
+        r = np.linalg.norm(vec)
+        if r == 0.0:
+            return 0.0
+        return 1.0 / (r * r * r)
+
+    def compute_accel(self, x_cart, x_jac):
+        N = self.order.size
+        g = self.particles.g
+        m = self.masses_ord
+        eta = self.eta
+
+        cart = x_cart[: 3 * N].reshape(N, 3)
+        jac = x_jac[: 3 * N].reshape(N, 3)
+        accel = np.zeros((N, 3), dtype=float)
+
+        m0 = m[0]
+        for i in range(1, N):
+            eta_i = eta[i]
+            eta_im1 = eta[i - 1]
+
+            r0i = cart[i] - cart[0]
+            r0i_inv3 = self._inv_r3(r0i)
+            ri_inv3 = self._inv_r3(jac[i])
+            accel[i] = g * m0 * eta_i / eta_im1 * (jac[i] * ri_inv3 - r0i * r0i_inv3)
+
+            aux = np.zeros(3, dtype=float)
             for j in range(1, i):
-                rji = self.cart[j*3:(j+1)*3] - self.cart[i*3:(i+1)*3]
-                aux += self.particles.masses[j]*self.particles.G/(np.linalg.norm(rji)**3)*rji
+                rji = cart[j] - cart[i]
+                aux += g * m[j] * rji * self._inv_r3(rji)
+            accel[i] += -(eta_i / eta_im1) * aux
 
-            self.accel[i*3: (i+1)*3] += -(self.eta[i]/self.eta[i-1])*aux
+            # Planet-planet interaction term only.
+            # Do not include j=0 (star), because the star Kepler force is already
+            # handled by the drift Hamiltonian.
+            aux = np.zeros(3, dtype=float)
+            for j in range(1, N):
+                if j == i:
+                    continue
+                rij = cart[i] - cart[j]
+                aux += g * m[j] * rij * self._inv_r3(rij)
+            accel[i] += aux
 
-            aux *= 0.0
-            # third part of formula
-            for j in range(self.particles.N)):
-                rij = self.cart[i*3:(i+1)*3] - self.cart[j*3:(j+1)*3]
-                aux += self.particles.G*self.particles.masses[j]*rij/(np.linalg.norm(rij)**3)
-
-            self.accel[i*3: (i+1)*3] += aux
-
-            aux *= 0.0
+            aux = np.zeros(3, dtype=float)
             for j in range(0, i):
-                for k in range(i+1, self.particles.N):
-                    rjk = self.cart[j*3:(j+1)*3] - self.cart[k*3:(k+1)*3]
-                    aux += self.particles.G*self.particles.masses[j]*self.particles.masses[k]*rjk/(np.linalg.norm(rjk)**3)
+                for k in range(i + 1, N):
+                    rjk = cart[j] - cart[k]
+                    aux += g * m[j] * m[k] * rjk * self._inv_r3(rjk)
+            accel[i] += -aux / eta_im1
 
-            self.accel[i*3: (i+1)*3] += -aux/self.eta[i-1]
-            '''
+        return accel
