@@ -13,66 +13,79 @@ class Particle(object):
     name=None: optional parameter, for plotting if one decides to name particle
     primary=None:
     '''
-    def __init__(self, ptype=0, 
+    def __init__(self, 
+                 ptype: int =0, 
                  pos=None, 
                  vel=None, 
-                 mass=0.0, 
-                 radius=0.0, 
-                 temperature=0.0,
+                 mass: float =0.0, 
+                 radius: float =0.0, 
+                 temperature: float =0.0,
                  albedo=None,
-                 name=None):
+                 name=None,
+                 primary=None,
+                 hash=None):
+        
         self.ptype = int(ptype)
-        self._pos = np.zeros(3) if pos is None else np.asarray(pos, dtype=float)
-        self._vel = np.zeros(3) if vel is None else np.asarray(vel, dtype=float)
-        self.x = pos[0]  # x
-        self.y = pos[1]  # y
-        self.z = pos[2]  # z
-        self.vx = vel[0]  # vx
-        self.vy = vel[1]  # vy
-        self.vz = vel[2]  # vz
+        self._pos = np.zeros(3, dtype=float) if pos is None else np.asarray(pos, dtype=float).reshape(3)
+        self._vel = np.zeros(3, dtype=float) if vel is None else np.asarray(vel, dtype=float).reshape(3)
+
         self.m = float(mass)
         self.r = float(radius)
         self.T = float(temperature)
         self.albedo = albedo
-        self.hash = np.random.randint(100000000, 999999999)
+        self.hash = int(hash) if hash is not None else int(np.random.randint(100000000, 999999999))
         self.name = name
 
-    def __repr__(self):
-        return f"Particle: m={self.m}, pos={self._pos}, vel={self._vel}, r={self.r}, name={self.name}, hash={self.hash}"
-
+    def __repr__(self) -> str:
+        return (
+            f"Particle(name={self.name!r}, ptype={self.ptype}, m={self.m}, r={self.r}, "
+            f"pos={self._pos.tolist()}, vel={self._vel.tolist()}, hash={self.hash})"
+        )
+    
+    # getter and setter methods for position and velocity
     @property
-    def pos(self):
+    def pos(self)-> np.ndarray:
         return self._pos
     
     @property
-    def vel(self):
+    def vel(self)-> np.ndarray:
         return self._vel
         
-    def temperature(self, particle):
-        return self.T
-        
     @pos.setter
-    def pos(self, pos_vec):
-        if type(pos_vec).__module__ == np.__name__:
-            if pos_vec.size == 3:
-                self.x = pos_vec[0]
-                self.y = pos_vec[1]
-                self.z = pos_vec[2]
-                self._pos = pos_vec
-            else:
-                raise ValueError('Position vector must be a len=3 vector.')
-        else:
-            raise ValueError('Position must be a numpy vector with len=3.')
+    def pos(self, pos_vec)-> None:
+        pos_vec = np.asarray(pos_vec, dtype=float)
+        if pos_vec.shape != (3,):
+            raise ValueError("pos must be shape (3,)")
+        self._pos = pos_vec
         
     @vel.setter
     def vel(self, vel_vec):
-        if type(vel_vec).__module__ == np.__name__:
-            if vel_vec.size == 3:
-                self.vx = vel_vec[0]
-                self.vy = vel_vec[1]
-                self.vz = vel_vec[2]
-                self._vel = vel_vec
-            else:
-                raise ValueError('Velocity must be a len=3 vector.')
-        else:
-            raise ValueError('Velocity must be a numpy vector with len=3.')
+        vel_vec = np.asarray(vel_vec, dtype=float)
+        if vel_vec.shape != (3,):
+            raise ValueError("vel must be shape (3,)")
+        self._vel = vel_vec
+
+    # just in case - convenience values if we need a specific coordinate direciton for pos and vel
+    @property
+    def x(self) -> float:
+        return float(self._pos[0])
+
+    @property
+    def y(self) -> float:
+        return float(self._pos[1])
+
+    @property
+    def z(self) -> float:
+        return float(self._pos[2])
+
+    @property
+    def vx(self) -> float:
+        return float(self._vel[0])
+
+    @property
+    def vy(self) -> float:
+        return float(self._vel[1])
+
+    @property
+    def vz(self) -> float:
+        return float(self._vel[2])

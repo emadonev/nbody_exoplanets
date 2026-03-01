@@ -1,34 +1,44 @@
 import numpy as np
-from particle import Particle
-from particles import Particles
-import numbers
-import tools
 import constants
 
 class Physics(object):
-    def energy(self, particles):
-        ke = 0.5 * np.sum(particles.masses * np.sum(particles._vel**2, axis=1))
+    # ---------
+    # energy
+    # ---------
+    def energy(self, particles)-> float:
+        # not all particles have to be active so
+        active = particles.active_indices
+        m = particles.masses
+        v = particles.vel
+
+        ke = 0.5 * np.sum(m[active] * np.sum(v[active] ** 2, axis=1))
 
         pe = 0.0
-        for i in range(particles.N):
-            for j in range(i+1, particles.N):
-                d = np.linalg.norm(particles._pos[i] - particles._pos[j])
-                pe -= constants.G * particles.masses[i] * particles.masses[j] / d
-        return ke + pe
+        for ii, i in enumerate(active):
+            for j in active[ii + 1 :]:
+                d = np.linalg.norm(particles.pos[i] - particles.pos[j])
+                if d == 0:
+                    continue
+                pe -= particles.g * particles.masses[i] * particles.masses[j] / d
+        return float(ke + pe)
     
+    # -----------
+    # resolving primary object
+    # -----------
     def center_of_mass(self, particles, subset=None):
         # define the center of mass with position and velocity
         if subset is None:
-            m = particles._mass
-            pos = particles._pos
-            vel = particles._vel
+            idx = particles.active_indices # use all active particles
         else:
             idx = np.asarray(subset, dtype=int)
-            m = particles._mass[idx]
-            pos = particles._pos[idx]
-            vel = particles._vel[idx]
+            idx = idx[particles.masses[idx] > 0.0] # take the ids of the subset of particles
+        
+        m = particles.masses[idx]
+        pos = particles.pos[idx]
+        vel = particles.vel[idx]
 
-        mtot = m.sum()
+        mtot = float(m.sum())
+
         com_pos = (m[:, None] * pos).sum(axis=0) / mtot
         com_vel = (m[:, None] * vel).sum(axis=0) / mtot
 
@@ -38,7 +48,7 @@ class Physics(object):
         # how do you determine the primary body - multiple systems of using it
 
         if primary_spec is None:
-            primary_spec = particles.primary
+            primary_spec = getattr(particles, "primary", "#COM#")
 
         # we define the center of mass as the primary body - most common
         if primary_spec == '#COM#':
@@ -47,7 +57,7 @@ class Physics(object):
         # the primary body is the most massive body - save the same parameters as with COM
         if primary_spec == '#MAX#':
             i = int(np.argmax(particles._mass))
-            return particles._mass[i], particles._pos[i].copy(), particles._vel[i].copy()
+            return float(particles._mass[i]), particles._pos[i].copy(), particles._vel[i].copy()
 
         # if primary_spec is a subset of indices - get the COM
         if isinstance(primary_spec, (list, tuple, np.ndarray)):
@@ -60,62 +70,93 @@ class Physics(object):
                 raise KeyError(f"No particle named {primary_spec}")
             
             # otherwise proceed as normal
-            i = particles.names[primary_spec]
-            return particles._mass[i], particles._pos[i].copy(), particles._vel[i].copy()
+            i = int(particles.names[primary_spec])
+            return float(particles._mass[i]), particles._pos[i].copy(), particles._vel[i].copy()
 
         # if the primary_spec is an index
         if isinstance(primary_spec, (int, np.integer)):
             i = int(primary_spec)
-            return particles._mass[i], particles._pos[i].copy, particles.vel[i].copy()
+            if not (0 <= i < particles.N):
+                raise IndexError(i)
+            return float(particles._mass[i]), particles._pos[i].copy(), particles._vel[i].copy()
         
         raise TypeError(f'Unsupported primary spec: {type(primary_spec)}')
     
-    def collision(self, particles, id1, id2):
-        # check if the 2 particles are in the system
-        try:
-            p1 = particles._particles[id1]
-            p2 = particles._particles[id2]
-        except ValueError:
-            return -1
+    # ----------
+    # collisions
+    # ----------
 
-        if p1 is not None and p2 is not None:
-            if p1.m > p2.m:
-                # body 1 is more massive so merge 2 into 1
-                p1.vel = (p1.m * p1.vel + p2.m * p2.vel)/(p1.m + p2.m) # the new velocity is gained from the conservation of momentum
-                p1.m = p1.m + p2.m # add the masses together
-                p1.r = np.power(np.power(p1.r, 3.0) + np.power(p2.r, 3.0), 1.0/3) # add the radii as cubes and then take the cube root (adding volumes)
-
-                # if any orbital parameters were defined with respect to p2, now they are with respect to p1
-                for p in particles._particles:
-                    if (p.primary is not None) and (particles._particles[p.primary] == id2 or particles._particles[p.primary] == p2.name):
-                        p.primary = id1
-                particles.remove_particle(p2)
-            else: # p2 is more massive
-                p2.vel = (p1.m * p2.vel + p2.m * p2.vel)/(p1.m + p2.m)
-                p2.m = p1.m + p2.m
-                p2.r = np.power(np.power(p1.r, 3.0) + np.power(p2.r, 3.0), 1.0/3)
-
-                for p in particles._particles:
-                    if (p.primary is not None) and (particles._particles[p.primary] == id1 or particles._particles[p.primary] == p1.name):
-                        p.primary = id2
-                particles.remove_particle(p1)
-            return 0 # if none of these conditions are satisfied
-        else:
-            return -1
+    def check_collision(self, particles, i: int, j: int) -> bool:
+        if i == j: # if we check the same object, no collision automatically
+            return False
+        # distance between both objects
+        d = np.linalg.norm(particles.pos[i] - particles.pos[j])
+        # check if the distance is less than the sum of their radii - they definitely collided
+        return d <= (particles.radii[i] + particles.radii[j])
     
+    def collision(self, particles, i:int, j:int)->bool:
+        #check if a collision occured - especially if i == j
+        if not self.check_collision(particles, i, j):
+            return False
+        
+        # more massive particle wins the collision
+        if particles.masses[i] >= particles.masses[j]:
+            keep, drop = i, j
+        else:
+            keep, drop = j, i
+
+        # define the properties of the 2 particles
+        m1, m2 = float(particles.masses[keep]), float(particles.masses[drop])
+        r1, r2 = float(particles.radii[keep]), float(particles.radii[drop])
+        p1 = particles.pos[keep].copy()
+        p2 = particles.pos[drop].copy()
+        v1 = particles.vel[keep].copy()
+        v2 = particles.vel[drop].copy()
+
+        m_new = m1 + m2 # mass of the new body is the sum of both masses
+        v_new = (m1*v1 + m2*v2) / m_new # conservation of linear momentum during collision
+        p_new = (m1*p1 + m2*p2) / m_new # new position of body is "center of mass" calculation of both bodies
+        r_new = (r1**3 + r2**3)**(1.0/3.0) # new radius
+
+        # update the arrays with this new particle
+        particles.pos[keep] = p_new
+        particles.vel[keep] = v_new
+        particles.masses[keep] = m_new
+        particles.radii[keep] = r_new
+
+        # deactivate the smaller particle to keep the arrays the same size
+        particles.deactivate_particle(drop)
+        return True # a collision happened
+    
+    # ------------
+    # temperature
+    # ------------
 
     def calculate_temp(self, particles):
+        star_idx = particles.star_indices # set the star indices
+        planet_idx = particles.planet_indices # set the planet indices
+
+        if star_idx.size == 0 or planet_idx.size == 0:
+            return particles.temperatures # no particles or stars in the system
+        
+        # calculate luminosities from all stars
+        L = 4.0 * np.pi * particles.radii[star_idx] ** 2 * constants.sb * particles.temperatures[star_idx]**4 # this returns a list of luminosities
+
+
         # calculate flux from each star
-        F = 0.0
         
-        for i in particles.star_indices:
-            Ls = 4 * np.pi * particles.radii[i]**2 * constants.sb * particles.temperatures[i]**4
-            for j in particles.planet_indices:
-                d = np.linalg.norm(particles._pos[j] - particles._pos[i])
-                F += Ls / (4 * np.pi * d**2)
-        
-        for k in particles.planet_indices:
-            particles._particles[k].T = ((1-particles._particles[k].albedo) * F / (4.0 * constants.sb))**(1/4)
-            particles.temperatures[k] = particles._particles[k].T
-        
+        for k in planet_idx: # for each planet
+            Fk = 0.0 # the starting flux is 0
+            for s_i, Ls in zip(star_idx, L): # for every index and luminosity in the list of indices and luminosities
+                d = np.linalg.norm(particles.pos[k] - particles.pos[s_i]) # calculate distance
+                if d == 0:
+                    continue
+                Fk += Ls / (4.0 * np.pi * d**2) # calculate flux
+
+            A = particles.albedos[k] # select albedo
+            if A is None:
+                A = 0.0 # if albedo is undefined select that it absorbs everything
+            T_eq = ((1.0 - float(A))* Fk / (4.0 * constants.sb)) ** 0.25 # calculate temperature
+            particles.temperatures[k] = T_eq # assign temperature to the list
+
         return particles.temperatures

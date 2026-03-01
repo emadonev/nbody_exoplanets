@@ -1,109 +1,115 @@
 import numpy as np
-import sys
-import constants
 import tools
 
 class WisdomHolman(object):
     def __init__(self):
-        return
+        self.particles = None
+        self.t0 = None
+        self.tf = None
+        self.dt = None
+        self.central = 0
     
     def bind(self, particles, t0, tf, dt):
         self.particles = particles
         self.t0 = t0
         self.tf = tf
         self.dt = dt
-        self.cart = self.setup()
-        self.eta = np.zeros(self.particles.N)
-        self.eta[0] = self.particles.masses[0]
-        for i in range(1,self.particles.N):
-            self.eta[i] = self.particles.masses[i] + self.eta[i-1]
-        
-        # compute jacobi coordinates from initial conditions
-        self.jacobi = tools.cart2jacobi(self.cart, 
-                                        self.particles.masses, 
-                                        self.particles.N, 
-                                        self.eta)
-        # compute acceleration for first kick
-        self.accel = self.compute_acc(self.cart, self.jacobi, self.particles.masses, self.particles.N, constants.G, self.eta)
-        
-    def setup(self):
-        state_vec = np.concatenate(
-            (self.particles.positions, self.particles.velocities)
-        )
-        # state_vec = [pos1, pos2, pos3,...,vel1,vel2,vel3,...]
 
-        helio = self.move_to_helio(state_vec, self.particles.N)
-
-        return helio
+        # pick central body: first active star (ptype==0) else most massive active
+        stars = particles.star_indices
+        if stars.size > 0:
+            self.central = int(stars[0])
+        else:
+            active = particles.active_indices
+            self.central = int(active[np.argmax(particles.masses[active])])
 
     def propagate(self):
         # kick for dt/2 using acceleration at t
-        self.kick()
-
+        self._kick(0.5 * self.dt)
         # drift for dt
-        self.drift()
-
-        # convert back to cartesian coordinates for 
-        # acceleration computation
-        self.cart = tools.jacobi2cart(self.jacobi, 
-                                        self.particles.masses, 
-                                        self.particles.N, 
-                                        self.eta)
-
-        # compute acceleration
-        self.compute_acc()
-
+        self._drift(self.dt)
         # second kick
-        self.kick()
+        self._kick(0.5*self.dt)
 
-        # store solution
-        self.cart = tools.jacobi2cart(self.jacobi, 
-                                        self.particles.masses, 
-                                        self.particles.N, 
-                                        self.eta)
+    def _kick(self, h:float):
+        p = self.particles
+        c = self.central
+        idx = self.particles.planet_indices
+        r = self.particles.pos[idx] - self.particles.pos[self.central]
+        v = self.particles.vel[idx] - self.particles.vel[self.central]
 
-        self.particles.positions = self.cart[0:self.particles.N*3+1]
-        self.particles.velocities = self.cart[self.particles.N*3:]
+        #??
+        # heliocentric positions/velocities
+        r = p.pos[idx] - p.pos[c]
+        v = p.vel[idx] - p.vel[c]
 
-    def kick(self):
-        # apply velocity kick
-        self.jacobi[self.particles.N*3:] += self.accel * 0.5*self.dt # simply v = a*t
+        # compute mutual accelerations among planets
+        a = np.zeros_like(r)
+        for ii in range(idx.size):
+            ri = r[ii]
+            for jj in range(idx.size):
+                if jj == ii:
+                    continue
+                rj = r[jj]
+                dr = rj - ri
+                d3 = np.linalg.norm(dr) ** 3
+                if d3 == 0:
+                    continue
+                a[ii] += p.g * p.masses[idx[jj]] * dr / d3
+
+        # update heliocentric velocities
+        v = v + a * h
+
+        # write back to barycentric velocities (central v held fixed)
+        p.vel[idx] = p.vel[c] + v
     
-    def drift(self):
+    def _drift(self, h:float):
         # propagate each body assuming Keplerian motion
         for i in range(1, self.particles.N):
-            gm = self.particles.masses[0] * self.eta[i] / self.eta[i-1] * constants.G
+            p = self.particles
+            c = self.central
 
-            pos0 = self.jacobi[i*3: (i+1)*3]
-            vel0 = self.jacobi[(self.particles.N+i)*3: (self.particles.N+i+1)*3]
+            idx = p.planet_indices
+            if idx.size == 0:
+                return
 
-            pos, vel = self.propagate_kepler(0.0, self.dt, pos0, vel0, gm)
+            r0 = p.pos[idx] - p.pos[c]
+            v0 = p.vel[idx] - p.vel[c]
 
-            self.jacobi[i*3: (i+1)(3)] = pos
-            self.jacobi[(self.particles.N+1)*3: (self.particles.N+1+i)*3] = vel
+            # per-planet mu
+            mu = p.g * (p.masses[c] + p.masses[idx])
+
+            r1 = np.empty_like(r0)
+            v1 = np.empty_like(v0)
+            for k in range(idx.size):
+                r1[k], v1[k] = tools.propagate_kepler_universal(r0[k], v0[k], h, mu[k])
+
+            p.pos[idx] = p.pos[c] + r1
+            p.vel[idx] = p.vel[c] + v1
     
+    '''
     def compute_acc(self):
         # for each body
         for i in range(1, self.particles.N):
             # first part of formula
             r0i = self.cart[i*3: (i+1)*3] - self.cart[0:3] # this it the zero vector compared to the center
 
-            self.accel[i*3: (i+1)*3] = constants.G*self.particles.masses[0]*self.eta[i]/self.eta[i-1]*\
+            self.accel[i*3: (i+1)*3] = self.particles.G*self.particles.masses[0]*self.eta[i]/self.eta[i-1]*\
             (self.jacobi[i*3:(i+1)*3]/np.linalg.norm(self.jacobi[i*3:(i+1)*3])**3-\
              r0i/np.linalg.norm(r0i)**3)
             
             # second part of formula
             for j in range(1, i):
                 rji = self.cart[j*3:(j+1)*3] - self.cart[i*3:(i+1)*3]
-                aux += self.particles.masses[j]*constants.G/(np.linalg.norm(rji)**3)*rji
+                aux += self.particles.masses[j]*self.particles.G/(np.linalg.norm(rji)**3)*rji
 
             self.accel[i*3: (i+1)*3] += -(self.eta[i]/self.eta[i-1])*aux
 
             aux *= 0.0
             # third part of formula
-            for j in range(i+1, N):
+            for j in range(self.particles.N)):
                 rij = self.cart[i*3:(i+1)*3] - self.cart[j*3:(j+1)*3]
-                aux += constants.G*self.particles.masses[j]*rij/(np.linalg.norm(rij)**3)
+                aux += self.particles.G*self.particles.masses[j]*rij/(np.linalg.norm(rij)**3)
 
             self.accel[i*3: (i+1)*3] += aux
 
@@ -111,81 +117,7 @@ class WisdomHolman(object):
             for j in range(0, i):
                 for k in range(i+1, self.particles.N):
                     rjk = self.cart[j*3:(j+1)*3] - self.cart[k*3:(k+1)*3]
-                    aux += constants.G*self.particles.masses[j]*self.particles.masses[k]*rjk/(np.linalg.norm(rjk)**3)
+                    aux += self.particles.G*self.particles.masses[j]*self.particles.masses[k]*rjk/(np.linalg.norm(rjk)**3)
 
             self.accel[i*3: (i+1)*3] += -aux/self.eta[i-1]
-
-    def propagate_kepler(t0, tf, vr0, vv0, gm):
-        # analytic method for propagating the orbits of planets
-        if t0 == tf:
-            vrf=vr0
-            vvf=vv0
-            return 
-        
-        dt = tf - t0
-        tol = 1e-12
-
-        # magnitude of starting vectors
-        r0 = np.linalg.norm(vr0)
-        v0 = np.linalg.norm(vv0)
-
-        # parameter alpha
-        alpha = -(v0**2 - 2.0*gm / r0)
-
-        # radial velocity
-        dr0 = np.dot(vr0, vv0)/r0
-        
-        # solving Kepler's equation
-        s = dt/r0
-        for j in range(0, 50):
-            c0, c1, c2, c3 = tools.stumpff_functions(alpha * s**2)
-
-            # evaluate Keplers equation
-            F = r0 * s * c1 + r0 * dr0 * s**2 * c2 + gm * s**3 * c3 - dt
-            if abs(F)<tol:
-                break
-
-            # compute derivative
-            dF = r0 * c0 + r0*dr0*s*c1 + gm * s**2 * c2
-
-            ds = -F/dF
-
-            if abs(ds) < tol:
-                break
-
-            # advance step:
-            s += ds
-
-        r = dF
-        f = 1.0 - gm * s**2 * c2 / r0
-        g = dt - gm * s**3 * c3
-        df = -gm / (r*r0) * s * c1
-        dg = 1.0 - gm / r * s**2 * c2
-
-        vr = f * vr0 + g * vv0
-        vv = df * vr0 + dg * vv0
-
-        return vr, vv
-
-
-    @staticmethod
-    def move_to_helio(x, nbodies):
-        '''
-        This function moves all coordinates with respect to the first body.
-        
-        :param x: Description
-        :param nbodies: Description
-        '''
-        helio = x.copy()
-        for ibod in range(1, nbodies):
-            # adjust all position vectors based on the first body
-            helio[ibod * 3 : (ibod + 1) * 3] = (
-                helio[ibod * 3 : (ibod + 1) * 3] - helio[0:3]
-            )
-
-            # adjust all the velocity vectors based on the first body
-            helio[(nbodies + ibod) * 3 : (nbodies + ibod + 1) * 3] = (
-                helio[(nbodies + ibod) * 3 : (nbodies + ibod + 1) * 3]
-                - helio[nbodies * 3 : (nbodies + 1) * 3]
-            )
-        return helio
+            '''

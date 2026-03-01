@@ -1,21 +1,19 @@
 from data_io import DataIO
 from physics import Physics
-import constants
 import tools
 import numpy as np
 
 class Simulation(object):
-    def __init__(self, particles, integrator):
+    def __init__(self, particles, integrator, dataio: DataIO, physics: Physics):
         self.particles = particles
         self.integrator = integrator
-        self.physics = Physics
-        self.dataio = DataIO
+        self.physics = physics or Physics()
+        self.dataio = dataio or DataIO(const_g=particles.g)
 
-    def run(self, t0, tf, dt, output_every_n=1):
-        # resolve primary
-        spec = getattr(self.particles, 'primary', None)
-        if spec is None:
-            self.Ms, self.rs, self.vs = self.resolve_primary(self.particles, '#COM#')        
+    def run(self, t0, tf, dt, output_every_n=1, handle_collisions=False):
+        # resolve primary every step because we use COM
+        spec = getattr(self.particles, 'primary', '#COM#')
+        self.Ms, self.rs, self.vs = self.physics.resolve_primary(self.particles, spec)  
 
         # initialize the integrator
         self.integrator.bind(self.particles, t0, tf, dt)
@@ -24,7 +22,7 @@ class Simulation(object):
         self.dataio.initialize_buffer(self.particles.N)
 
         # track time and step
-        t = t0
+        t = float(t0)
         step = 0
 
         # store initial snapshot
@@ -34,34 +32,58 @@ class Simulation(object):
         while t < tf:
             # perform step
             self.integrator.propagate()
+
+            # synchronize objects
+            if hasattr(self.particles, '_sync_objects'):
+                self.particles._sync_objects()
+
+            # handle collisions
+            if handle_collisions:
+                self._handle_collisions()
+
             # update time and step
             t += dt
             step += 1
 
-            # handle collisions
-            for i in range(self.particles.N):
-                for j in range(i, self.particles.N):
-                    self.physics.collision(self.particles, i, j)
+            # update primary body
+            if spec == '#COM#':
+                self.Ms, self.rs, self.vs = self.physics.center_of_mass(self.particles)
 
-            if step % output_every_n == 0:
+            if step % int(output_every_n) == 0:
                 self._store_snapshot(t)
-
-            # redo COM calculation in case of collision or the motion of the center of motion
-            self.Ms, self.rs, self.vs = self.physics.center_of_mass(self.particles)
         
         self.dataio.close()
 
-    def _store_snapshot(self, t):
-        E = self.physics.energy(self.particles)
-        temp = self.physics.calculate_temp(self.particles)
+    def _handle_collisions(self):
+        active = self.particles.active_indices
 
-        a, e, i = tools.aei(
-                mp = self.particles.masses,
-                ms = self.Ms,
-                pos=np.array([self.particles._pos - self.rs]),
-                vel=np.array([self.particles._vel - self.vs]),
-                G=constants.G
-            )
+        for a_i, i in enumerate(active):
+            if self.particles.masses[i] <= 0: # if the mass is less than zero (deactivated)
+                continue
+            for j in active[a_i + 1 :]: # for every other particle to the end of the list
+                if self.particles.masses[j] <= 0: # if this particle is deactivated
+                    continue
+                self.physics.collision(self.particles, int(i), int(j)) # if they are all active particles, perform collision mechanics
+
+    def _store_snapshot(self, t):
+        E = self.physics.energy(self.particles) # compute energy at this step
+        temp = self.physics.calculate_temp(self.particles) # compute temperatures at this step
+
+        pos_rel = self.particles.pos - self.rs # position relative to the PRIMARY
+        vel_rel = self.particles.vel - self.vs # velocity relative to the PRIMARY
+
+        # allocate for a, e, i
+        a = np.full(self.particles.N, np.nan, dtype=float)
+        e = np.full(self.particles.N, np.nan, dtype=float)
+        inc = np.full(self.particles.N, np.nan, dtype=float)
+
+        active = self.particles.active_indices
+        mp = self.particles.masses[active]
+
+        a_act, e_act, inc_act = tools.aei(mp=mp, Ms=self.Ms, pos=pos_rel[active], vel=vel_rel[active], G=self.particles.g)
+        a[active] = a_act
+        e[active] = e_act
+        inc[active] = inc_act
         
         self.dataio.store_state(
             t=t,
@@ -74,6 +96,6 @@ class Simulation(object):
             ptypes=self.particles.ptypes,
             a=a,
             e=e,
-            i=i,
+            inc=inc,
             energy=E
         )
