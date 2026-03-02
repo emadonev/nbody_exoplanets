@@ -44,44 +44,6 @@ class Physics(object):
 
         return mtot, com_pos, com_vel
     
-    def resolve_primary(self, particles, primary_spec=None):
-        # how do you determine the primary body - multiple systems of using it
-
-        if primary_spec is None:
-            primary_spec = getattr(particles, "primary", "#COM#")
-
-        # we define the center of mass as the primary body - most common
-        if primary_spec == '#COM#':
-            return self.center_of_mass(particles)
-        
-        # the primary body is the most massive body - save the same parameters as with COM
-        if primary_spec == '#MAX#':
-            i = int(np.argmax(particles._mass))
-            return float(particles._mass[i]), particles._pos[i].copy(), particles._vel[i].copy()
-
-        # if primary_spec is a subset of indices - get the COM
-        if isinstance(primary_spec, (list, tuple, np.ndarray)):
-            return self.center_of_mass(particles, subset=primary_spec)
-        
-        # if the primary_spec is a name of what is our primary
-        if isinstance(primary_spec, str):
-            # if the name isn't found, raise an error
-            if primary_spec not in particles.names:
-                raise KeyError(f"No particle named {primary_spec}")
-            
-            # otherwise proceed as normal
-            i = int(particles.names[primary_spec])
-            return float(particles._mass[i]), particles._pos[i].copy(), particles._vel[i].copy()
-
-        # if the primary_spec is an index
-        if isinstance(primary_spec, (int, np.integer)):
-            i = int(primary_spec)
-            if not (0 <= i < particles.N):
-                raise IndexError(i)
-            return float(particles._mass[i]), particles._pos[i].copy(), particles._vel[i].copy()
-        
-        raise TypeError(f'Unsupported primary spec: {type(primary_spec)}')
-    
     # ----------
     # collisions
     # ----------

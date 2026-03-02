@@ -1,7 +1,7 @@
 import numpy as np
 from particle import Particle
 import numbers
-import constants
+import tools
 
 class Particles(object):
     def __init__(self, G):
@@ -17,8 +17,76 @@ class Particles(object):
         self._hash = np.zeros((0,), dtype=np.int64)
         self._albedo = np.empty((0,), dtype=object)
 
+        self._a = np.zeros((0,), dtype=np.float64)
+        self._e = np.zeros((0,), dtype=np.float64)
+        self._i = np.zeros((0,), dtype=np.float64)
+        self._Omega = np.zeros((0,), dtype=np.float64)
+        self._omega = np.zeros((0,), dtype=np.float64)
+        self._theta = np.zeros((0,), dtype=np.float64)
+
         self._name_to_index: dict[str, int] = {}
         self.primary = "#COM#"
+
+    def resolve_primary_index(self, primary_spec=None):
+        active = self.active_indices
+        if active.size == 0:
+            raise ValueError("cannot resolve primary without existing active bodies")
+
+        if primary_spec is None:
+            primary_spec = self.primary
+
+        if isinstance(primary_spec, str):
+            if primary_spec == "#COM#":
+                stars = self.star_indices
+                if stars.size > 0:
+                    return int(stars[0])
+                return int(active[np.argmax(self._mass[active])])
+            if primary_spec == "#MAX#":
+                return int(active[np.argmax(self._mass[active])])
+            if primary_spec not in self._name_to_index:
+                raise KeyError(f"No particles named {primary_spec}")
+            return int(self._name_to_index[primary_spec])
+
+        if isinstance(primary_spec, numbers.Integral):
+            i = int(primary_spec)
+            if not (0 <= i < self.N):
+                raise IndexError(i)
+            if self._mass[i] <= 0.0:
+                raise ValueError(f"primary index {i} is inactive")
+            return i
+
+        raise TypeError(f"Unsupported primary spec type: {type(primary_spec)}")
+
+    def resolve_primary_state(self, primary_spec=None):
+        if primary_spec is None:
+            primary_spec = self.primary
+
+        if primary_spec == "#COM#":
+            idx = self.active_indices
+            m = self._mass[idx]
+            pos = self._pos[idx]
+            vel = self._vel[idx]
+            mtot = float(m.sum())
+            com_pos = (m[:, None] * pos).sum(axis=0) / mtot
+            com_vel = (m[:, None] * vel).sum(axis=0) / mtot
+            return mtot, com_pos, com_vel
+
+        if isinstance(primary_spec, (list, tuple, np.ndarray)):
+            idx = np.asarray(primary_spec, dtype=int)
+            idx = idx[(0 <= idx) & (idx < self.N)]
+            idx = idx[self._mass[idx] > 0.0]
+            if idx.size == 0:
+                raise ValueError("primary subset has no active bodies")
+            m = self._mass[idx]
+            pos = self._pos[idx]
+            vel = self._vel[idx]
+            mtot = float(m.sum())
+            com_pos = (m[:, None] * pos).sum(axis=0) / mtot
+            com_vel = (m[:, None] * vel).sum(axis=0) / mtot
+            return mtot, com_pos, com_vel
+
+        i = self.resolve_primary_index(primary_spec)
+        return float(self._mass[i]), self._pos[i].copy(), self._vel[i].copy()
     
     # properties of the particles container
 
@@ -146,10 +214,8 @@ class Particles(object):
     def add_particle(self, particle):
         if not isinstance(particle, Particle):
             raise TypeError("add_particle expects a Particle")
-        
-        # initialize the properties of the added particle
-        pos = np.asarray(particle.pos, dtype=np.float64).reshape(3)
-        vel = np.asarray(particle.vel, dtype=np.float64).reshape(3)
+
+        # initialize scalar properties
         m = float(particle.m)
         r = float(particle.r)
         pt = int(getattr(particle, 'ptype', 0))
@@ -157,15 +223,84 @@ class Particles(object):
         h = int(getattr(particle, 'hash', np.random.randint(100000000, 999999999)))
         alb = getattr(particle, 'albedo', None)
 
-        # check that all values are accurate
-        if not np.isfinite(pos).all() or not np.isfinite(vel).all():
-            raise ValueError("pos/vel must be finite")
-        
         if m <= 0:
             raise ValueError("mass must be > 0")
-        
         if h in set(self._hash.tolist()):
             raise ValueError(f"Duplicate hash {h}")
+
+        # Optional orbital elements.
+        a = getattr(particle, "a", None)
+        e = getattr(particle, "e", None)
+        inc = getattr(particle, "inc", None)
+        Omega = getattr(particle, "Omega", None)
+        omega = getattr(particle, "omega", None)
+        theta = getattr(particle, "theta", None)
+        angles_in_degrees = bool(getattr(particle, "angles_in_degrees", False))
+        orbital_values = [a, e, inc, Omega, omega, theta]
+        has_orbital = all(v is not None for v in orbital_values)
+        if any(v is not None for v in orbital_values) and not has_orbital:
+            raise ValueError("a/e/inc/Omega/omega/theta must all be set for orbital conversion")
+
+        # Determine Cartesian state:
+        # 1) explicit pos/vel if provided by user
+        # 2) else derive from orbital elements relative to resolved primary
+        # 3) else default zeros (useful for first central star)
+        if getattr(particle, "_cartesian_input", False):
+            pos = np.asarray(particle.pos, dtype=np.float64).reshape(3)
+            vel = np.asarray(particle.vel, dtype=np.float64).reshape(3)
+        elif has_orbital:
+            if self.N == 0:
+                if pt == 0:
+                    # First central body: no reference primary exists yet.
+                    # Keep the default origin state for the initial star.
+                    pos = np.zeros(3, dtype=np.float64)
+                    vel = np.zeros(3, dtype=np.float64)
+                else:
+                    raise ValueError("cannot convert orbital elements without an existing primary body")
+            else:
+                primary_spec = getattr(particle, "primary", None)
+                primary_idx = self.resolve_primary_index(primary_spec)
+                mu = self.g * (self._mass[primary_idx] + m)
+                r_rel, v_rel = tools.orb_to_cartesian(
+                    a=a,
+                    e=e,
+                    i=inc,
+                    Omega=Omega,
+                    omega=omega,
+                    theta=theta,
+                    mu=mu,
+                    angles_in_degrees=angles_in_degrees,
+                )
+                pos = self._pos[primary_idx] + r_rel
+                vel = self._vel[primary_idx] + v_rel
+        else:
+            if pt != 0 and self.N > 0:
+                raise ValueError("non-star particles require either pos/vel or full orbital elements")
+            pos = np.asarray(particle.pos, dtype=np.float64).reshape(3)
+            vel = np.asarray(particle.vel, dtype=np.float64).reshape(3)
+
+        if not np.isfinite(pos).all() or not np.isfinite(vel).all():
+            raise ValueError("pos/vel must be finite")
+
+        if has_orbital and not np.isfinite(np.array([a, e, inc, Omega, omega, theta], dtype=float)).all():
+            raise ValueError("orbital elements must be finite")
+
+        # Store orbital elements in radians internally when available.
+        if has_orbital and angles_in_degrees:
+            inc_store = np.deg2rad(float(inc))
+            Omega_store = np.deg2rad(float(Omega))
+            omega_store = np.deg2rad(float(omega))
+            theta_store = np.deg2rad(float(theta))
+        elif has_orbital:
+            inc_store = float(inc)
+            Omega_store = float(Omega)
+            omega_store = float(omega)
+            theta_store = float(theta)
+        else:
+            inc_store = np.nan
+            Omega_store = np.nan
+            omega_store = np.nan
+            theta_store = np.nan
 
         idx = self.N
 
@@ -178,6 +313,12 @@ class Particles(object):
         self._ptype = np.append(self._ptype, pt)
         self._hash = np.append(self._hash, h)
         self._albedo = np.append(self._albedo, alb)
+        self._a = np.append(self._a, float(a) if has_orbital else np.nan)
+        self._e = np.append(self._e, float(e) if has_orbital else np.nan)
+        self._i = np.append(self._i, inc_store)
+        self._Omega = np.append(self._Omega, Omega_store)
+        self._omega = np.append(self._omega, omega_store)
+        self._theta = np.append(self._theta, theta_store)
         
         # adding the object itself
         self._particles.append(particle)
@@ -222,6 +363,12 @@ class Particles(object):
         self._ptype = np.delete(self._ptype, idx)
         self._hash = np.delete(self._hash, idx)
         self._albedo = np.delete(self._albedo, idx)
+        self._a = np.delete(self._a, idx)
+        self._e = np.delete(self._e, idx)
+        self._i = np.delete(self._i, idx)
+        self._Omega = np.delete(self._Omega, idx)
+        self._omega = np.delete(self._omega, idx)
+        self._theta = np.delete(self._theta, idx)
 
         # rebuild mapping according to the new order of particles
         self._name_to_index = {
@@ -249,6 +396,12 @@ class Particles(object):
         self._ptype[idx] = -1
         self._pos[idx] = np.nan
         self._vel[idx] = np.nan
+        self._a[idx] = np.nan
+        self._e[idx] = np.nan
+        self._i[idx] = np.nan
+        self._Omega[idx] = np.nan
+        self._omega[idx] = np.nan
+        self._theta[idx] = np.nan
 
     def _sync_objects(self) -> None:
         # copy array state into the stored Particle objects to keep everything in sync!
@@ -263,3 +416,9 @@ class Particles(object):
             p.ptype = int(self._ptype[i])
             p.hash = int(self._hash[i])
             p.albedo = self._albedo[i]
+            p.a = float(self._a[i]) if np.isfinite(self._a[i]) else None
+            p.e = float(self._e[i]) if np.isfinite(self._e[i]) else None
+            p.inc = float(self._i[i]) if np.isfinite(self._i[i]) else None
+            p.Omega = float(self._Omega[i]) if np.isfinite(self._Omega[i]) else None
+            p.omega = float(self._omega[i]) if np.isfinite(self._omega[i]) else None
+            p.theta = float(self._theta[i]) if np.isfinite(self._theta[i]) else None

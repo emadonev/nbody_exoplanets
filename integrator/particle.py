@@ -23,9 +23,19 @@ class Particle(object):
                  albedo=None,
                  name=None,
                  primary=None,
-                 hash=None):
+                 hash=None,
+                 a=None,
+                 e=None,
+                 inc=None,
+                 Omega=None,
+                 omega=None,
+                 theta=None,
+                 angles_in_degrees: bool = False):
         
         self.ptype = int(ptype)
+        if (pos is None) ^ (vel is None):
+            raise ValueError("pos and vel must be both provided or both omitted")
+        self._cartesian_input = (pos is not None and vel is not None)
         self._pos = np.zeros(3, dtype=float) if pos is None else np.asarray(pos, dtype=float).reshape(3)
         self._vel = np.zeros(3, dtype=float) if vel is None else np.asarray(vel, dtype=float).reshape(3)
 
@@ -35,6 +45,15 @@ class Particle(object):
         self.albedo = albedo
         self.hash = int(hash) if hash is not None else int(np.random.randint(100000000, 999999999))
         self.name = name
+        self.primary = primary
+
+        self.a = None if a is None else float(a)
+        self.e = None if e is None else float(e)
+        self.inc = None if inc is None else float(inc)
+        self.Omega = None if Omega is None else float(Omega)
+        self.omega = None if omega is None else float(omega)
+        self.theta = None if theta is None else float(theta)
+        self.angles_in_degrees = bool(angles_in_degrees)
 
     def __repr__(self) -> str:
         return (

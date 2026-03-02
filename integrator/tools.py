@@ -7,8 +7,63 @@ Tools is a helper Python script used for housing various functions for coordinat
 import numpy as np
 import math
 
-def orb_to_cartesian():
-    return None
+def orb_to_cartesian(a, e, i, Omega, omega, theta, mu, angles_in_degrees=False):
+    """
+    Convert Keplerian orbital elements to Cartesian state vectors.
+
+    Inputs:
+      a, e, i, Omega, omega, theta : classical elements
+      mu                           : gravitational parameter G*(M_primary + m_body)
+      angles_in_degrees            : set True if angular elements are in degrees
+    Returns:
+      r_vec, v_vec                 : relative position and velocity, shape (3,)
+    """
+    a = float(a)
+    e = float(e)
+    i = float(i)
+    Omega = float(Omega)
+    omega = float(omega)
+    theta = float(theta)
+    mu = float(mu)
+
+    if angles_in_degrees:
+        i = np.deg2rad(i)
+        Omega = np.deg2rad(Omega)
+        omega = np.deg2rad(omega)
+        theta = np.deg2rad(theta)
+
+    if a == 0.0:
+        raise ValueError("semi-major axis a must be non-zero")
+    if mu <= 0.0:
+        raise ValueError(f"mu must be positive, got {mu}")
+
+    p = a * (1.0 - e * e)
+    if p <= 0.0:
+        raise ValueError(f"invalid semilatus rectum p={p}; check a/e")
+
+    cO = np.cos(Omega)
+    sO = np.sin(Omega)
+    co = np.cos(omega)
+    so = np.sin(omega)
+    ci = np.cos(i)
+    si = np.sin(i)
+    ct = np.cos(theta)
+    st = np.sin(theta)
+
+    # Perifocal basis vectors projected in inertial frame.
+    p_hat = np.array(
+        [cO * co - sO * so * ci, sO * co + cO * so * ci, so * si],
+        dtype=float,
+    )
+    q_hat = np.array(
+        [-cO * so - sO * co * ci, -sO * so + cO * co * ci, co * si],
+        dtype=float,
+    )
+
+    r = p / (1.0 + e * ct)
+    r_vec = r * (ct * p_hat + st * q_hat)
+    v_vec = np.sqrt(mu / p) * (-st * p_hat + (e + ct) * q_hat)
+    return r_vec, v_vec
 
 
 def aei(mp, Ms, pos, vel, G):

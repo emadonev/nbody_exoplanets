@@ -52,16 +52,8 @@ class WisdomHolman(object):
             self.eta = np.zeros(0, dtype=float)
             return
 
-        if self.central not in active:
-            stars = p.star_indices
-            if stars.size > 0:
-                star_active = stars[np.isin(stars, active)]
-                if star_active.size > 0:
-                    self.central = int(star_active[0])
-                else:
-                    self.central = int(active[np.argmax(p.masses[active])])
-            else:
-                self.central = int(active[np.argmax(p.masses[active])])
+        # Central body for Jacobi ordering comes from Particles resolver.
+        self.central = int(p.resolve_primary_index(getattr(p, "primary", "#COM#")))
 
         others = active[active != self.central]
         self.order = np.concatenate(([self.central], others)).astype(int)
