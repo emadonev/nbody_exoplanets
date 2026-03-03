@@ -303,6 +303,9 @@ class Particles(object):
             theta_store = np.nan
 
         idx = self.N
+        name = getattr(particle, "name", None)
+        if name is not None and name in self._name_to_index:
+            raise ValueError(f"Duplicate name {name}")
 
         # update the container properties by adding each component to its list
         self._pos = np.vstack([self._pos, pos[None, :]])
@@ -320,13 +323,25 @@ class Particles(object):
         self._omega = np.append(self._omega, omega_store)
         self._theta = np.append(self._theta, theta_store)
         
+        # Keep object state consistent with container arrays at insertion time.
+        particle._pos = pos.copy()
+        particle._vel = vel.copy()
+        particle.m = m
+        particle.r = r
+        particle.T = temp
+        particle.ptype = pt
+        particle.hash = h
+        particle.albedo = alb
+        particle.a = float(a) if has_orbital else None
+        particle.e = float(e) if has_orbital else None
+        particle.inc = inc_store if np.isfinite(inc_store) else None
+        particle.Omega = Omega_store if np.isfinite(Omega_store) else None
+        particle.omega = omega_store if np.isfinite(omega_store) else None
+        particle.theta = theta_store if np.isfinite(theta_store) else None
+
         # adding the object itself
         self._particles.append(particle)
-        
-        name = getattr(particle, "name", None)
         if name is not None:
-            if name in self._name_to_index:
-                raise ValueError(f"Duplicate name {name}")
             self._name_to_index[name] = idx
 
         return h

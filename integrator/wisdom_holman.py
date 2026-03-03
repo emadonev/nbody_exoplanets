@@ -41,6 +41,13 @@ class WisdomHolman(object):
         x_jac = self._drift_jacobi(x_jac, 0.5 * self.dt)
         x_cart_new = tools.jacobi2cart(x_jac, self.masses_ord, self.order.size, self.eta)
         self._set_active_cart(x_cart_new)
+        #jac_mom[1:] += self.dt * dPdt[1:]
+       # jac_vel[1:] = jac_mom[1:] / mu_red[:, None]
+        #x_jac[3 * N :] = jac_vel.reshape(-1)
+
+        #x_jac = self._drift_jacobi(x_jac, 0.5 * self.dt)
+        #x_cart_new = tools.jacobi2cart(x_jac, self.masses_ord, self.order.size, self.eta)
+        #self._set_active_cart(x_cart_new)
 
     def _refresh_active_order(self):
         p = self.particles
@@ -101,6 +108,7 @@ class WisdomHolman(object):
         return 1.0 / (r * r * r)
 
     def compute_accel(self, x_cart, x_jac):
+        # Return dP/dt (canonical momentum derivative) for Jacobi kick.
         N = self.order.size
         g = self.particles.g
         m = self.masses_ord
@@ -116,32 +124,26 @@ class WisdomHolman(object):
             eta_im1 = eta[i - 1]
 
             r0i = cart[i] - cart[0]
-            r0i_inv3 = self._inv_r3(r0i)
-            ri_inv3 = self._inv_r3(jac[i])
-            accel[i] = g * m0 * eta_i / eta_im1 * (jac[i] * ri_inv3 - r0i * r0i_inv3)
+            accel[i] = g * m0 * eta_i / eta_im1 * (jac[i] / (np.linalg.norm(jac[i])**3) - r0i / (np.linalg.norm(r0i)**3))
 
             aux = np.zeros(3, dtype=float)
             for j in range(1, i):
-                rji = cart[j] - cart[i]
-                aux += g * m[j] * rji * self._inv_r3(rji)
+                rji = cart[i] - cart[j]
+                aux += g * m[j] * rji / (np.linalg.norm(rji)**3)
             accel[i] += -(eta_i / eta_im1) * aux
 
-            # Planet-planet interaction term only.
-            # Do not include j=0 (star), because the star Kepler force is already
-            # handled by the drift Hamiltonian.
             aux = np.zeros(3, dtype=float)
-            for j in range(1, N):
-                if j == i:
-                    continue
-                rij = cart[i] - cart[j]
-                aux += g * m[j] * rij * self._inv_r3(rij)
+            for j in range(i+1, N):
+                rij = cart[j] - cart[i]
+                aux += g * m[j] * rij / (np.linalg.norm(rij)**3)
             accel[i] += aux
 
             aux = np.zeros(3, dtype=float)
             for j in range(0, i):
                 for k in range(i + 1, N):
-                    rjk = cart[j] - cart[k]
+                    rjk = cart[k] - cart[j]
                     aux += g * m[j] * m[k] * rjk * self._inv_r3(rjk)
-            accel[i] += -aux / eta_im1
+            accel[i] -= aux / eta_im1
 
         return accel
+    

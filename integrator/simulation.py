@@ -76,13 +76,21 @@ class Simulation(object):
         e = np.full(self.particles.N, np.nan, dtype=float)
         inc = np.full(self.particles.N, np.nan, dtype=float)
 
-        active = self.particles.active_indices
-        mp = self.particles.masses[active]
-
-        a_act, e_act, inc_act = tools.aei(mp=mp, Ms=self.Ms, pos=pos_rel[active], vel=vel_rel[active], G=self.particles.g)
-        a[active] = a_act
-        e[active] = e_act
-        inc[active] = inc_act
+        # Orbital elements are only meaningful for orbiting bodies.
+        # Exclude stars/primaries to avoid r=0 singularities in diagnostics.
+        orbit_idx = self.particles.planet_indices
+        if orbit_idx.size > 0:
+            mp = self.particles.masses[orbit_idx]
+            a_act, e_act, inc_act = tools.aei(
+                mp=mp,
+                Ms=self.Ms,
+                pos=pos_rel[orbit_idx],
+                vel=vel_rel[orbit_idx],
+                G=self.particles.g,
+            )
+            a[orbit_idx] = a_act
+            e[orbit_idx] = e_act
+            inc[orbit_idx] = inc_act
         
         self.dataio.store_state(
             t=t,

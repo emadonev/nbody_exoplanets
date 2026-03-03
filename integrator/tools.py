@@ -177,49 +177,42 @@ def jacobi2cart(x, masses, N, eta):
 
 
 def stumpff_functions(z):
-    # reducing z until the solution will be precise
-    n = 0
-    while (abs(z) > 0.1):
-        n += 1
-        z /= 4.0
+    z = float(z)
+    az = abs(z)
 
-    # c4 and c5
-    c4 = 1/(math.factorial(4)) - z/(math.factorial(6))
-    c5 = 1/(math.factorial(5)) - z/(math.factorial(7))
+    if az < 1.0e-10:
+        z2 = z * z
+        z3 = z2 * z
+        z4 = z3 * z
+        c0 = 1.0 - z / 2.0 + z2 / 24.0 - z3 / 720.0 + z4 / 40320.0
+        c1 = 1.0 - z / 6.0 + z2 / 120.0 - z3 / 5040.0 + z4 / 362880.0
+        c2 = 0.5 - z / 24.0 + z2 / 720.0 - z3 / 40320.0 + z4 / 3628800.0
+        c3 = 1.0 / 6.0 - z / 120.0 + z2 / 5040.0 - z3 / 362880.0 + z4 / 39916800.0
+    elif z > 0.0:
+        s = math.sqrt(z)
+        c0 = math.cos(s)
+        c1 = math.sin(s) / s
+        c2 = (1.0 - c0) / z
+        c3 = (1.0 - c1) / z
+    else:
+        s = math.sqrt(-z)
+        c0 = math.cosh(s)
+        c1 = math.sinh(s) / s
+        c2 = (1.0 - c0) / z
+        c3 = (1.0 - c1) / z
 
-    z_conj = -z
-    p = z_conj
-    k = 8
-    c4_prev = 0
+    if az < 1.0e-10:
+        c4 = 1.0 / 24.0 - z / 720.0 + (z * z) / 40320.0
+        c5 = 1.0 / 120.0 - z / 5040.0 + (z * z) / 362880.0
+    else:
+        c4 = (0.5 - c2) / z
+        c5 = (1.0 / 6.0 - c3) / z
 
-    while c4 != c4_prev:
-        c4_prev = c4
-        p = p * z_conj
-        c4 = c4 + p/(math.factorial(k))
-        k += 1
-        c5 = c5 + p/(math.factorial(k))
-        k += 1
-    
-    c3 = 1/6 - z * c5
-    c2 = 1/2 - z*c4
-    c1 = 1 - z*c3
-
-    while n > 0:
-        z = 4*z
-        c5 = 1/16 * (c5 + c4 + c3 + c2)
-        c4 = 1/8 * c3 * (1-c1)
-        c3 = 1/6 - z*c5
-        c2 = 1/2 - z*c4
-        c1 = 1 - z*c3
-        n -= 1
-
-    c0 = 1 - z*c2
-    
     return c0, c1, c2, c3, c4, c5
 
-def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-13, max_iter=80):
+def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
     """
-    Universal-variable Kepler drift with Stumpff functions and G-functions.
+    Universal-variable Kepler drift (book-style Stumpff solve).
 
     Inputs:
       r0_vec, v0_vec : initial relative state vectors, shape (3,)
@@ -228,83 +221,76 @@ def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-13, max_iter=80):
     Returns:
       r1_vec, v1_vec : propagated relative state vectors, shape (3,)
     """
-
-
     r0_vec = np.asarray(r0_vec, dtype=float).reshape(3)
     v0_vec = np.asarray(v0_vec, dtype=float).reshape(3)
     dt = float(dt)
     mu = float(mu)
 
-    # if nothing to derive position and vel for
-    if dt == 0:
+    if dt == 0.0:
         return r0_vec.copy(), v0_vec.copy()
-    
     if mu <= 0.0:
         raise ValueError(f"mu must be positive, got {mu}")
-    
+
     r0 = float(np.linalg.norm(r0_vec))
     if r0 == 0.0:
         raise ValueError("initial position norm must be non-zero")
-    
+
     v0sq = float(np.dot(v0_vec, v0_vec))
-    eta0 = float(np.dot(r0_vec, v0_vec))
-    beta = 2.0 * mu / r0 - v0sq
-    zeta0 = mu - beta * r0
+    dr0 = float(np.dot(r0_vec, v0_vec)) / r0
+    alpha = 2.0 * mu / r0 - v0sq
 
-    # initial guess
-    X = dt / r0
-    if beta > 0.0:
-        X = np.sign(dt) * min(abs(X), 0.5 * np.pi / np.sqrt(beta))
-
+    s = dt / r0
     converged = False
     F = np.nan
-    # using iterations to get towards the solution
+
+    tol_F = tol * max(1.0, abs(dt))
     for _ in range(max_iter):
-        
-        z = beta * X * X
+        z = alpha * s * s
         c0, c1, c2, c3, _, _ = stumpff_functions(z)
 
-        G1 = X * c1
-        G2 = X * X * c2
-        G3 = X * X * X * c3
-
-        # Universal Kepler equation and derivative wrt X.
-        F = r0 * G1 + eta0 * G2 + zeta0 * G3 - dt
-        dF = r0 * c0 + eta0 * G1 + zeta0 * G2
+        s2 = s * s
+        s3 = s2 * s
+        F = r0 * s * c1 + r0 * dr0 * s2 * c2 + mu * s3 * c3 - dt
+        dF = r0 * c0 + r0 * dr0 * s * c1 + mu * s2 * c2
 
         if dF == 0.0:
             break
 
-        dX = -F / dF
-        X += dX
+        ds = -F / dF
+        s += ds
 
-        if abs(dX) < tol and abs(F) < tol:
+        if abs(F) < tol_F or abs(ds) < tol:
             converged = True
             break
 
     if not converged:
+        z = alpha * s * s
+        c0, c1, c2, c3, _, _ = stumpff_functions(z)
+        s2 = s * s
+        s3 = s2 * s
+        F = r0 * s * c1 + r0 * dr0 * s2 * c2 + mu * s3 * c3 - dt
+        if abs(F) < 10.0 * tol_F:
+            converged = True
+
+    if not converged:
         raise RuntimeError(
             "Kepler universal solve did not converge "
-            f"(dt={dt}, mu={mu}, r0={r0}, X={X}, F={F}, max_iter={max_iter})"
+            f"(dt={dt}, mu={mu}, r0={r0}, s={s}, F={F}, max_iter={max_iter})"
         )
 
-    z = beta * X * X
+    z = alpha * s * s
     c0, c1, c2, c3, _, _ = stumpff_functions(z)
-    G1 = X * c1
-    G2 = X * X * c2
-    G3 = X * X * X * c3
-    r = r0 * c0 + eta0 * G1 + zeta0 * G2
-
+    s2 = s * s
+    s3 = s2 * s
+    r = r0 * c0 + r0 * dr0 * s * c1 + mu * s2 * c2
     if r <= 0.0:
         raise RuntimeError(f"invalid propagated radius r={r}")
-    
 
-    f = 1.0 - (mu / r0) * G2
-    g = dt - mu * G3
-    fdot = -(mu / (r * r0)) * G1
-    gdot = 1.0 - (mu / r) * G2
+    f = 1.0 - mu * s2 * c2 / r0
+    g = dt - mu * s3 * c3
+    fdot = -mu * s * c1 / (r * r0)
+    gdot = 1.0 - mu * s2 * c2 / r
 
     r_vec1 = f * r0_vec + g * v0_vec
     v_vec1 = fdot * r0_vec + gdot * v0_vec
-
     return r_vec1, v_vec1
