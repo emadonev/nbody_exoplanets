@@ -4,7 +4,14 @@ import os
 import constants
 
 class DataIO(object):
-    # handling the data aspect of the project
+    '''
+
+    DataIO is an object used to store the data of a desired simulation run in the form of a HDF5 file. It stores all relevant metadata,
+    including but not limited to: position, velocity, mass, energy, radius, temperature, orbital parameters,...
+
+    It uses a buffer to fill up storage and then flushes all the data to a data.hdf5 file.
+
+    '''
     def __init__(
             self,
             buf_len: int =1024,
@@ -12,6 +19,9 @@ class DataIO(object):
             collision_file_name: str ='collisions.txt',
             const_g: float =constants.G
         ):
+
+        # SETTING UP THE BUFFER NAMES
+        # =============
 
         self.buf_len = int(buf_len)
         self.output_name = output_file_name
@@ -40,8 +50,10 @@ class DataIO(object):
         self.h5_file = None
         self.h5_step_id = 0
 
-    # initialize buffer and allocate space for everything in advance
     def initialize_buffer(self, n_particles: int):
+        '''
+        Initialize the buffer - allocate space for all variables and ensure correct number of particles.
+        '''
         if self.buf_initialized:
             return # if the buffer is already initialized, no need for initialization
 
@@ -83,7 +95,9 @@ class DataIO(object):
 
 
     def flush(self):
-        # write the data to the hdf5 file
+        '''
+        flush - push all the data once buffer is filled to the hdf5 file
+        '''
         if self.buf_cursor == 0:
             # already flushed
             return
@@ -95,6 +109,7 @@ class DataIO(object):
         h5_step_group = self.h5_file.create_group(f"Step_{self.h5_step_id}") # create a subgroup until a specified step
         sl = slice(0, self.buf_cursor)
 
+        # save all the needed data in the form of a dictionary
         state_dict = {
             "time": self.buf_t[sl],
             "energy": self.buf_energy[sl],
@@ -110,6 +125,7 @@ class DataIO(object):
             "inc": self.buf_i[sl],
         }
 
+        # save data to the hdf5 file
         for k, v in state_dict.items():
             h5_step_group.create_dataset(k, data=v)
 
@@ -119,6 +135,9 @@ class DataIO(object):
         self.buf_cursor = 0
     
     def close(self):
+        '''
+        close - close the hdf5 file once everything is pushed and the simulation is finished.
+        '''
         if self.buf_cursor > 0:
             self.flush() # if there happens to be more data to push
 
@@ -141,6 +160,10 @@ class DataIO(object):
             inc: np.ndarray,
             energy: float,
     ):
+        '''
+        store_state - store the desired state of every parameter within simulation, and then later
+        when the buffer fills up it will go into the hdf5 file.
+        '''
         if not self.buf_initialized:
             raise RuntimeError("Call initialize_buffer(n_particles) before store_state().")
         
@@ -148,6 +171,7 @@ class DataIO(object):
             # buffer is full
             self.flush()
         
+        # filling up the buffer with computed values
         self.buf_t[self.buf_cursor] = float(t)
 
         self.buf_pos[self.buf_cursor] = np.asarray(pos, dtype=np.float64).reshape(-1)
@@ -176,6 +200,9 @@ class DataIO(object):
 
     
     def store_collisions(self, collision_buffer: np.ndarray):
+        '''
+        If simulator supports collisions, also save collision data of which particles and when did they collide.
+        '''
         if not self.collision_name:
             return
         np.savetxt(

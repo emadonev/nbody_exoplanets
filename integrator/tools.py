@@ -6,6 +6,7 @@ Tools is a helper Python script used for housing various functions for coordinat
 
 import numpy as np
 import math
+    
 
 def orb_to_cartesian(a, e, i, Omega, omega, theta, mu, angles_in_degrees=False):
     """
@@ -175,6 +176,48 @@ def jacobi2cart(x, masses, N, eta):
 
     return np.concatenate([cart_pos.reshape(-1), cart_vel.reshape(-1)])
 
+# HIERARCHICAL JACOBI
+# -----
+
+def cart2HJS(x, M, N):
+    x = np.asarray(x, dtype=float).reshape(-1)
+
+    if x.size != 6 * N:
+        raise ValueError(f"x must have size 6N (= {6*N})")
+
+    M = np.asarray(M, dtype=float)
+    if M.shape != (N, N):
+        raise ValueError(f"M must have shape ({N}, {N})")
+
+    pos = x[:3 * N].reshape(N, 3)
+    vel = x[3 * N:].reshape(N, 3)
+
+    hjs_pos = M @ pos
+    hjs_vel = M @ vel
+
+    return np.concatenate([hjs_pos.reshape(-1), hjs_vel.reshape(-1)])
+
+def HJS2cart(x, M, N):
+    x = np.asarray(x, dtype=float).reshape(-1)
+
+    if x.size != 6 * N:
+        raise ValueError(f"x must have size 6N (= {6*N})")
+
+    M = np.asarray(M, dtype=float)
+    if M.shape != (N, N):
+        raise ValueError(f"M must have shape ({N}, {N})")
+
+    hjs_pos = x[:3 * N].reshape(N, 3)
+    hjs_vel = x[3 * N:].reshape(N, 3)
+
+    M_inv = np.linalg.inv(M)
+
+    pos = M_inv @ hjs_pos
+    vel = M_inv @ hjs_vel
+
+    return np.concatenate([pos.reshape(-1), vel.reshape(-1)])
+
+# -------
 
 def stumpff_functions(z):
     z = float(z)

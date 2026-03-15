@@ -12,6 +12,10 @@ class Particle(object):
     radius=0.0: radius of particle
     name=None: optional parameter, for plotting if one decides to name particle
     primary=None:
+
+    Methods:
+    pos() - get the position
+    vel() - get the velocity
     '''
     def __init__(self, 
                  ptype: int =0, 
@@ -22,6 +26,7 @@ class Particle(object):
                  temperature: float =0.0,
                  albedo=None,
                  name=None,
+                 tree_index=None,
                  primary=None,
                  hash=None,
                  a=None,
@@ -32,21 +37,27 @@ class Particle(object):
                  theta=None,
                  angles_in_degrees: bool = False):
         
+        # setting the particle type
         self.ptype = int(ptype)
+
+        # checking if the position and velocity are set
         if (pos is None) ^ (vel is None):
             raise ValueError("pos and vel must be both provided or both omitted")
         self._cartesian_input = (pos is not None and vel is not None)
         self._pos = np.zeros(3, dtype=float) if pos is None else np.asarray(pos, dtype=float).reshape(3)
         self._vel = np.zeros(3, dtype=float) if vel is None else np.asarray(vel, dtype=float).reshape(3)
 
+        # setting up all the other auxiliary values
         self.m = float(mass)
         self.r = float(radius)
         self.T = float(temperature)
         self.albedo = albedo
         self.hash = int(hash) if hash is not None else int(np.random.randint(100000000, 999999999))
         self.name = name
+        self.tree_index = None if tree_index is None else tuple(tree_index)
         self.primary = primary
 
+        # setting the orbital parameters
         self.a = None if a is None else float(a)
         self.e = None if e is None else float(e)
         self.inc = None if inc is None else float(inc)
@@ -56,6 +67,7 @@ class Particle(object):
         self.angles_in_degrees = bool(angles_in_degrees)
 
     def __repr__(self) -> str:
+        # print method
         return (
             f"Particle(name={self.name!r}, ptype={self.ptype}, m={self.m}, r={self.r}, "
             f"pos={self._pos.tolist()}, vel={self._vel.tolist()}, hash={self.hash})"
@@ -72,6 +84,7 @@ class Particle(object):
         
     @pos.setter
     def pos(self, pos_vec)-> None:
+        # setting the position + checking the shape
         pos_vec = np.asarray(pos_vec, dtype=float)
         if pos_vec.shape != (3,):
             raise ValueError("pos must be shape (3,)")
@@ -79,6 +92,7 @@ class Particle(object):
         
     @vel.setter
     def vel(self, vel_vec):
+        # setting the velocity + checking the shape
         vel_vec = np.asarray(vel_vec, dtype=float)
         if vel_vec.shape != (3,):
             raise ValueError("vel must be shape (3,)")

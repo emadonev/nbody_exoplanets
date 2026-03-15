@@ -1,6 +1,11 @@
 import numpy as np
 
-#G = 6.67*10**(-11)
+'''
+
+This Python script contains all the constants that will be used for running the simulations.
+
+'''
+
+# PHYSICAL CONSTANTS
 G =4*np.pi**2
-#G = 1.0
 sb = 5.67*10**(-8)
