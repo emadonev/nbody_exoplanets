@@ -179,13 +179,20 @@ def jacobi2cart(x, masses, N, eta):
 # HIERARCHICAL JACOBI
 # -----
 
-def cart2HJS(x, M, N):
+def cart2HJS(x, M, N=None):
     x = np.asarray(x, dtype=float).reshape(-1)
+
+    M = np.asarray(M, dtype=float)
+    if M.ndim != 2 or M.shape[0] != M.shape[1]:
+        raise ValueError("M must be a square matrix")
+    if N is None:
+        N = M.shape[0]
+    else:
+        N = int(N)
 
     if x.size != 6 * N:
         raise ValueError(f"x must have size 6N (= {6*N})")
 
-    M = np.asarray(M, dtype=float)
     if M.shape != (N, N):
         raise ValueError(f"M must have shape ({N}, {N})")
 
@@ -197,13 +204,20 @@ def cart2HJS(x, M, N):
 
     return np.concatenate([hjs_pos.reshape(-1), hjs_vel.reshape(-1)])
 
-def HJS2cart(x, M, N):
+def HJS2cart(x, M, N=None):
     x = np.asarray(x, dtype=float).reshape(-1)
+
+    M = np.asarray(M, dtype=float)
+    if M.ndim != 2 or M.shape[0] != M.shape[1]:
+        raise ValueError("M must be a square matrix")
+    if N is None:
+        N = M.shape[0]
+    else:
+        N = int(N)
 
     if x.size != 6 * N:
         raise ValueError(f"x must have size 6N (= {6*N})")
 
-    M = np.asarray(M, dtype=float)
     if M.shape != (N, N):
         raise ValueError(f"M must have shape ({N}, {N})")
 

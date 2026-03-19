@@ -1,7 +1,7 @@
+import numpy as np
 from data_io import DataIO
 from physics import Physics
 import tools
-import numpy as np
 
 class Simulation(object):
     def __init__(self, particles, integrator, dataio: DataIO, physics: Physics):
@@ -11,6 +11,9 @@ class Simulation(object):
         self.dataio = dataio or DataIO(const_g=particles.g)
 
     def run(self, t0, tf, dt, output_every_n=1, handle_collisions=False):
+        spec = getattr(self.particles, 'primary', '#COM#')
+        self.Ms, self.rs, self.vs = self.particles.resolve_primary_state(spec)
+
         # initialize the integrator
         self.integrator.bind(self.particles, t0, tf, dt)
 
@@ -40,6 +43,8 @@ class Simulation(object):
             # update time and step
             t += dt
             step += 1
+
+            self.Ms, self.rs, self.vs = self.particles.resolve_primary_state(spec)
 
             if step % int(output_every_n) == 0:
                 self._store_snapshot(t)

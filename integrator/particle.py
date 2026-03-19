@@ -26,7 +26,7 @@ class Particle(object):
                  temperature: float =0.0,
                  albedo=None,
                  name=None,
-                 tree_index=None,
+                 index=None,
                  primary=None,
                  hash=None,
                  a=None,
@@ -54,7 +54,7 @@ class Particle(object):
         self.albedo = albedo
         self.hash = int(hash) if hash is not None else int(np.random.randint(100000000, 999999999))
         self.name = name
-        self.tree_index = None if tree_index is None else tuple(tree_index)
+        self.index = None if index is None else str(index)
         self.primary = primary
 
         # setting the orbital parameters

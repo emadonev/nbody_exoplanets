@@ -1,41 +1,7 @@
 import numpy as np
-from particle import Particle
 import numbers
 import tools
-
-class TreeNode(object):
-    '''
-    TreeNode - object used to build a binary tree for the hierarchical systems of stars and planets. 
-    Sets each node to have a value, parent, and left and right child. 
-    If the node is a leaft, it an index associated with it.
-    If the node is a parent, it has information for all the bodies that it is parent to, the submass, reduced mass,
-    effective mass, how to transform to HJ (hierarchical Jacobi) coordinates and the postorder numbering for internal nodes that
-    the integrator uses later. 
-    '''
-    def __init__(self, value, parent=None):
-        # value and if the node has a parent
-        self.value = value
-        self.parent = parent
-
-        # can assign left and right child
-        self.left = None
-        self.right = None
-
-        # leaf info
-        self.body_index = None   # integer index into self._particles if this is a leaf
-
-        # subtree/orbit metadata
-        self.bodies_indices = None
-        self.submass = None
-        self.reduced_mass = None
-        self.effective_mass = None
-        self.transform_row = None
-        self.orbit_index = None  # postorder numbering for internal nodes
-
-    @property
-    def is_leaf(self):
-        # if the node doesn't have a body_index, it is not a leaf!
-        return self.body_index is not None
+from particle import Particle
 
 class Particles(object):
     '''
@@ -59,7 +25,7 @@ class Particles(object):
     - deactivate_particle() - in case of a collision, deactivate the body but don't remove it from the system
     - _sync_objects() - after every integration step, update the particle's positions, velocities, etc. 
     '''
-    def __init__(self, G):
+    def __init__(self, G, system_type=None):
         self.g = float(G)
 
         self._particles: list[Particle] = []
@@ -80,204 +46,20 @@ class Particles(object):
         self._theta = np.zeros((0,), dtype=np.float64)
 
         self._name_to_index: dict[str, int] = {}
-        self.primary = "#COM#"
+        self._index_to_array: dict[str, int] = {}  # maps particle.index label (A/B/C/P…) -> array position
+        self.system = system_type  # can be 5 types: SA, SB, SC, SAB-P, P(ABC)
+        self.primary = "#COM#"     # default reference frame: total centre of mass
 
     def _get_body_index(self, particle):
         return self._particles.index(particle)
-    
-    def _child_body_indices(self, child):
-        """
-        Returns all leaf-body indices contained in `child`.
-        `child` can be either a Particle leaf or a TreeNode subtree.
-        """
-        if child is None:
-            return []
-        if isinstance(child, TreeNode):
-            return child.bodies_indices
-        return [self._get_body_index(child)]
 
-    def _child_submass(self, child):
-        """
-        Returns total mass of `child`.
-        """
-        if child is None:
-            return 0.0
-        if isinstance(child, TreeNode):
-            return child.submass
-        return child.m
-    
-    def _build_transform_row(self, left_child, right_child):
-        '''
-        Build a row of the transformation matrix between HJS and Cartesian
-        '''
-        # HJS Jacobi transform
-        row = np.zeros(self.N, dtype=float)
-
-        # determine left and right bodies to calculate properties
-        left_ids = self._child_body_indices(left_child)
-        right_ids = self._child_body_indices(right_child)
-
-        # sum masses
-        m_left = sum(self._particles[i].m for i in left_ids)
-        m_right = sum(self._particles[i].m for i in right_ids)
-
-        if m_left <= 0 or m_right <= 0:
-            raise ValueError("Both branches of an internal orbit must have positive mass.")
-
-        # build X_left and X_right vectors
-        for i in left_ids:
-            row[i] = -self._particles[i].m / m_left
-
-        for i in right_ids:
-            row[i] = self._particles[i].m / m_right
-
-        return row
-
-    def postorder(self, node, orbit_list=None):
-        '''
-        Postorder function for determining the sequence of orbits to integrate over later.
-        '''
-        # if we have reached a leaf
-        if node is None:
-            return
-        
-        if orbit_list is None:
-            orbit_list = []
-        
-        # recurse into children if they are internal nodes
-        if isinstance(node.left, TreeNode):
-            self.postorder(node.left, orbit_list)
-
-        if isinstance(node.right, TreeNode):
-            self.postorder(node.right, orbit_list)
-
-        # internal node sanity check
-        if node.left is None or node.right is None:
-            raise ValueError(f"Internal node {node.prefix} does not have exactly two children.")
-
-        # bodies in subtree
-        left_ids = self._child_body_indices(node.left)
-        right_ids = self._child_body_indices(node.right)
-        node.bodies_indices = left_ids + right_ids
-
-        # masses of the two branches
-        m_left = self._child_submass(node.left)
-        m_right = self._child_submass(node.right)
-
-        # submass, reduced mass, effective mass and the transform row building
-        node.submass = m_left + m_right
-        node.reduced_mass = (m_left * m_right) / (m_left + m_right)
-        node.effective_mass = m_left + m_right   # this is eta_k in the HJS/Kepler sense
-        node.transform_row = self._build_transform_row(node.left, node.right)
-
-        # append the orbit indexes to orbit list so postorder is done only once
-        node.orbit_index = len(orbit_list)
-        orbit_list.append(node)
-
-        return orbit_list
-    
-    def tree_build(self):
-        '''
-        Build the hierarchical binary tree for complex systems.
-        '''
-        active = self.active_indices
-
-        if active.size == 0:
-            raise ValueError('cannot build tree without existing active bodies')
-        
-        # canonical nodes by prefix
-        # root is the empty prefix ()
-        nodes = {(): TreeNode("root", prefix=())}
-        
-        # for every particle
-        for i in active:
-            p = self._particles[i] # get the particle
-
-            if p.tree_index is None:
-                raise ValueError(f"Particle {p.name} is missing tree_index.")
-
-            path = tuple(p.tree_index)
-            if len(path) == 0:
-                raise ValueError(f"Particle {p.name} has empty tree_index.")
-
-            # build the tree
-            for depth in range(1, len(path)): # how deep the path is (how many branches does the tree have)
-                prefix = path[:depth] # takes the second element
-                parent_prefix = path[:depth - 1] # element before that is the parent
-
-                if prefix not in nodes:
-                    nodes[prefix] = TreeNode(value=prefix[-1], prefix=prefix)
-
-                # asign parent and child
-                parent = nodes[parent_prefix]
-                child = nodes[prefix]
-
-                # build tree with parents and children
-                if parent.left is None:
-                    parent.left = child
-                    child.parent = parent
-                elif parent.left is child:
-                    pass
-                elif parent.right is None:
-                    parent.right = child
-                    child.parent = parent
-                elif parent.right is child:
-                    pass
-                else:
-                    raise ValueError(
-                        f"Parent node {parent_prefix} has more than two children."
-                    )
-
-            # attach the particle itself to the final internal prefix
-            leaf_parent_prefix = path[:-1]
-            side_value = path[-1]
-
-            if leaf_parent_prefix not in nodes:
-                # this happens for depth-1 paths like (1,)
-                nodes[leaf_parent_prefix] = TreeNode(
-                    value=leaf_parent_prefix[-1] if len(leaf_parent_prefix) > 0 else "root",
-                    prefix=leaf_parent_prefix
-                )
-
-            parent = nodes[leaf_parent_prefix]
-
-            # use final token to decide left/right placement consistently
-            if side_value == 1:
-                if parent.left is None:
-                    parent.left = p
-                elif parent.left is not p:
-                    raise ValueError(
-                        f"Conflict at node {leaf_parent_prefix}: left child already occupied."
-                    )
-            elif side_value == 2:
-                if parent.right is None:
-                    parent.right = p
-                elif parent.right is not p:
-                    raise ValueError(
-                        f"Conflict at node {leaf_parent_prefix}: right child already occupied."
-                    )
-            else:
-                raise ValueError(
-                    f"Final tree_index entry for particle {p.name} must be 1 or 2, got {side_value}."
-                )
-        
-        root = nodes[()]
-
-        if root.left is None or root.right is None:
-            raise ValueError("Root of hierarchy must have exactly two children.")
-
-        # postorder list of internal orbit nodes
-        orbit_list = self.postorder(root, orbit_list=[])
-
-        # store useful compiled hierarchy metadata
-        self.tree_root = root
-        self.orbit_nodes = orbit_list
-        self.n_orbits = len(orbit_list)
-
-        #self.M_hjs = 
-        self.M_hjs = np.vstack([node.transform_row for node in orbit_list])
-
-        return root
+    def get_by_label(self, label: str) -> tuple:
+        """Return (array_index, Particle) for a particle with the given index label (e.g. 'A', 'B', 'C')."""
+        key = str(label)
+        if key not in self._index_to_array:
+            raise KeyError(f"No particle with index label '{label}'")
+        i = self._index_to_array[key]
+        return i, self._particles[i]
         
     def resolve_primary_index(self, primary_spec=None):
         active = self.active_indices
@@ -313,7 +95,7 @@ class Particles(object):
         if primary_spec is None:
             primary_spec = self.primary
 
-        if primary_spec == "#COM#":
+        if isinstance(primary_spec, str) and primary_spec == "#COM#":
             idx = self.active_indices
             m = self._mass[idx]
             pos = self._pos[idx]
@@ -511,8 +293,26 @@ class Particles(object):
                     raise ValueError("cannot convert orbital elements without an existing primary body")
             else:
                 primary_spec = getattr(particle, "primary", None)
-                primary_idx = self.resolve_primary_index(primary_spec)
-                mu = self.g * (self._mass[primary_idx] + m)
+                if isinstance(primary_spec, (list, tuple, np.ndarray)):
+                    # Primary is a subset of bodies — orbit their centre of mass.
+                    idx_list = []
+                    for p in primary_spec:
+                        if isinstance(p, str):
+                            if p not in self._name_to_index:
+                                raise KeyError(f"No particle named '{p}'")
+                            idx_list.append(self._name_to_index[p])
+                        else:
+                            idx_list.append(int(p))
+                    mp, primary_pos, primary_vel = self.resolve_primary_state(
+                        np.array(idx_list, dtype=int)
+                    )
+                    mu = self.g * (mp + m)
+                else:
+                    primary_idx = self.resolve_primary_index(primary_spec)
+                    mp = float(self._mass[primary_idx])
+                    mu = self.g * (mp + m)
+                    primary_pos = self._pos[primary_idx].copy()
+                    primary_vel = self._vel[primary_idx].copy()
                 r_rel, v_rel = tools.orb_to_cartesian(
                     a=a,
                     e=e,
@@ -523,8 +323,8 @@ class Particles(object):
                     mu=mu,
                     angles_in_degrees=angles_in_degrees,
                 )
-                pos = self._pos[primary_idx] + r_rel
-                vel = self._vel[primary_idx] + v_rel
+                pos = primary_pos + r_rel
+                vel = primary_vel + v_rel
         else:
             if pt != 0 and self.N > 0:
                 raise ValueError("non-star particles require either pos/vel or full orbital elements")
@@ -595,6 +395,9 @@ class Particles(object):
         self._particles.append(particle)
         if name is not None:
             self._name_to_index[name] = idx
+        label = getattr(particle, "index", None)
+        if label is not None:
+            self._index_to_array[str(label)] = idx
 
         return h
     
@@ -637,11 +440,16 @@ class Particles(object):
         self._omega = np.delete(self._omega, idx)
         self._theta = np.delete(self._theta, idx)
 
-        # rebuild mapping according to the new order of particles
+        # rebuild mappings according to the new order of particles
         self._name_to_index = {
             p.name: k
             for k, p in enumerate(self._particles)
             if getattr(p, "name", None) is not None
+        }
+        self._index_to_array = {
+            str(p.index): k
+            for k, p in enumerate(self._particles)
+            if getattr(p, "index", None) is not None
         }
 
     def deactivate_particle(self, idx:int)-> None:

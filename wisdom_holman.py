@@ -1,7 +1,6 @@
 import numpy as np
 import tools
 
-
 class WisdomHolman(object):
     def __init__(self):
         self.particles = None
@@ -24,7 +23,7 @@ class WisdomHolman(object):
         self._refresh_active_order()
         if self.order.size <= 1:
             return
-
+        
         x_cart = self._get_active_cart()
         x_jac = tools.cart2jacobi(x_cart, self.masses_ord, self.order.size, self.eta)
 
@@ -41,13 +40,6 @@ class WisdomHolman(object):
         x_jac = self._drift_jacobi(x_jac, 0.5 * self.dt)
         x_cart_new = tools.jacobi2cart(x_jac, self.masses_ord, self.order.size, self.eta)
         self._set_active_cart(x_cart_new)
-        #jac_mom[1:] += self.dt * dPdt[1:]
-       # jac_vel[1:] = jac_mom[1:] / mu_red[:, None]
-        #x_jac[3 * N :] = jac_vel.reshape(-1)
-
-        #x_jac = self._drift_jacobi(x_jac, 0.5 * self.dt)
-        #x_cart_new = tools.jacobi2cart(x_jac, self.masses_ord, self.order.size, self.eta)
-        #self._set_active_cart(x_cart_new)
 
     def _refresh_active_order(self):
         p = self.particles
@@ -59,8 +51,7 @@ class WisdomHolman(object):
             self.eta = np.zeros(0, dtype=float)
             return
 
-        # Central body for Jacobi ordering comes from Particles resolver.
-        self.central = int(p.resolve_primary_index(getattr(p, "primary", "#COM#")))
+        self.central = int(p.resolve_primary_index(p.primary))
 
         others = active[active != self.central]
         self.order = np.concatenate(([self.central], others)).astype(int)
