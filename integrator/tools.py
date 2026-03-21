@@ -6,7 +6,8 @@ Tools is a helper Python script used for housing various functions for coordinat
 
 import numpy as np
 import math
-    
+from numba import njit
+
 
 def orb_to_cartesian(a, e, i, Omega, omega, theta, mu, angles_in_degrees=False):
     """
@@ -233,6 +234,7 @@ def HJS2cart(x, M, N=None):
 
 # -------
 
+@njit
 def stumpff_functions(z):
     z = float(z)
     az = abs(z)
@@ -267,6 +269,7 @@ def stumpff_functions(z):
 
     return c0, c1, c2, c3, c4, c5
 
+@njit
 def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
     """
     Universal-variable Kepler drift (book-style Stumpff solve).
@@ -278,15 +281,13 @@ def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
     Returns:
       r1_vec, v1_vec : propagated relative state vectors, shape (3,)
     """
-    r0_vec = np.asarray(r0_vec, dtype=float).reshape(3)
-    v0_vec = np.asarray(v0_vec, dtype=float).reshape(3)
     dt = float(dt)
     mu = float(mu)
 
     if dt == 0.0:
         return r0_vec.copy(), v0_vec.copy()
     if mu <= 0.0:
-        raise ValueError(f"mu must be positive, got {mu}")
+        raise ValueError("mu must be positive")
 
     r0 = float(np.linalg.norm(r0_vec))
     if r0 == 0.0:
@@ -330,10 +331,7 @@ def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
             converged = True
 
     if not converged:
-        raise RuntimeError(
-            "Kepler universal solve did not converge "
-            f"(dt={dt}, mu={mu}, r0={r0}, s={s}, F={F}, max_iter={max_iter})"
-        )
+        raise RuntimeError("Kepler universal solve did not converge")
 
     z = alpha * s * s
     c0, c1, c2, c3, _, _ = stumpff_functions(z)
@@ -341,7 +339,7 @@ def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
     s3 = s2 * s
     r = r0 * c0 + r0 * dr0 * s * c1 + mu * s2 * c2
     if r <= 0.0:
-        raise RuntimeError(f"invalid propagated radius r={r}")
+        raise RuntimeError("invalid propagated radius")
 
     f = 1.0 - mu * s2 * c2 / r0
     g = dt - mu * s3 * c3

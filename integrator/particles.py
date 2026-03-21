@@ -1,7 +1,7 @@
 import numpy as np
 import numbers
-import tools
-from particle import Particle
+from . import tools
+from .particle import Particle
 
 class Particles(object):
     '''

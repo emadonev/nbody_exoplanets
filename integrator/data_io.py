@@ -1,7 +1,7 @@
 import numpy as np
 import h5py
 import os
-import constants
+from . import constants
 
 class DataIO(object):
     '''

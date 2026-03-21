@@ -1,16 +1,18 @@
 import numpy as np
 from . import tools
 
-class WisdomHolman_SAB_P(object):
+class WisdomHolman_SC_P(object):
     '''
-    Wisdom-Holman integrator for S(AB)-P type triple hierarchical systems.
+    Wisdom-Holman integrator for S(C)-P type triple hierarchical systems.
 
-    Body order in HJS space: A, B, planet_0, ..., planet_{N-1}, C
+    Stars A & B form an inner binary; star C orbits their COM; planet(s) orbit star C.
+
+    Body order in HJS space: A, B, C, planet_0, ..., planet_{N-1}
     HJS coordinates (rows of transform matrix M):
-      Row 0      : X_B   = r_B - r_A
-      Row 1..N   : X_Pj  = r_{Pj} - COM(AB)
-      Row N+1    : X_C   = r_C  - COM(AB + planets)
-      Row N+2    : X_COM = total barycenter
+      Row 0      : X_B    = r_B    - r_A
+      Row 1      : X_C    = r_C    - COM(A + B)
+      Row 2..N+1 : X_{Pj} = r_{Pj} - r_C
+      Row N+2    : X_COM  = total barycenter
     '''
     def __init__(self):
         self.particles = None
@@ -34,25 +36,26 @@ class WisdomHolman_SAB_P(object):
         self.mB = float(particles.masses[self._iB])
         self.mC = float(particles.masses[self._iC])
 
-        # Collect circumbinary planets (ptype == 1).
-        planet_idx = particles.planet_indices          # global array indices
+        # Collect planets (ptype == 1) — these orbit star C.
+        planet_idx = particles.planet_indices
         self.planet_indices = planet_idx
         self.m_planets = particles.masses[planet_idx].copy()  # shape (N_planets,)
         self.N_planets = len(self.m_planets)
 
-        # Composite masses for the S(AB)-P hierarchy.
-        self.mb      = self.mA + self.mB
-        self.mt      = self.mb + float(np.sum(self.m_planets))
-        self.M_total = self.mt + self.mC
+        # Composite masses for the S(C)-P hierarchy.
+        self.m_inner = self.mA + self.mB                          # inner binary A+B
+        self.m_mid   = self.m_inner + self.mC                     # A+B+C
+        self.M_total = self.m_mid + float(np.sum(self.m_planets)) # everything
 
         # GM parameters for Kepler solvers.
-        self.GM_binary = self.G * self.mb   # B orbits A
-        self.GM_planet = self.G * self.mb   # planets orbit binary COM
-        self.GM_outer  = self.G * self.mt   # C orbits (AB + planets) COM
+        # A and B are a true binary of comparable mass — use full two-body GM.
+        self.GM_B      = self.G * self.m_inner  # B orbits A: GM = G*(mA+mB)
+        self.GM_C      = self.G * self.m_inner  # C orbits COM(A+B): GM = G*(mA+mB)
+        self.GM_planet = self.G * self.mC       # planets orbit C
 
-        # HJS body order in the particles array: A, B, planet_0..N-1, C
+        # HJS body order in the particles array: A, B, C, planet_0..N-1
         self.hjs_order = np.array(
-            [self._iA, self._iB] + list(self.planet_indices) + [self._iC],
+            [self._iA, self._iB, self._iC] + list(self.planet_indices),
             dtype=int,
         )
 
@@ -60,33 +63,32 @@ class WisdomHolman_SAB_P(object):
 
     def _build_transform_matrices(self):
         N = self.N_planets
-        n = N + 3           # A, B, N planets, C  (COM row also lives here)
+        n = N + 3  # A, B, C, N planets
 
         M = np.zeros((n, n))
 
+        # Columns: 0=A, 1=B, 2=C, 3..N+2=planets
+
         # Row 0: X_B = r_B - r_A
-        M[0, 0] = -1.0
-        M[0, 1] =  1.0
+        M[0, 0] = -1.0   # -r_A
+        M[0, 1] =  1.0   # +r_B
 
-        # Rows 1..N: X_{Pj} = r_{Pj} - (mA*r_A + mB*r_B) / mb
-        for j in range(N):
-            M[j+1, 0]   = -self.mA / self.mb
-            M[j+1, 1]   = -self.mB / self.mb
-            M[j+1, 2+j] =  1.0
+        # Row 1: X_C = r_C - COM(A + B)
+        M[1, 0] = -self.mA / self.m_inner   # A
+        M[1, 1] = -self.mB / self.m_inner   # B
+        M[1, 2] =  1.0                       # +r_C
 
-        # Row N+1: X_C = r_C - COM(AB + planets)
-        M[N+1, 0] = -self.mA / self.mt
-        M[N+1, 1] = -self.mB / self.mt
+        # Rows 2..N+1: X_{Pj} = r_{Pj} - r_C
         for j in range(N):
-            M[N+1, 2+j] = -self.m_planets[j] / self.mt
-        M[N+1, 2+N] = 1.0
+            M[j+2, 2]   = -1.0   # -r_C
+            M[j+2, 3+j] =  1.0   # +r_{Pj}
 
         # Row N+2: X_COM = total barycenter
         M[N+2, 0] = self.mA / self.M_total
         M[N+2, 1] = self.mB / self.M_total
+        M[N+2, 2] = self.mC / self.M_total
         for j in range(N):
-            M[N+2, 2+j] = self.m_planets[j] / self.M_total
-        M[N+2, 2+N] = self.mC / self.M_total
+            M[N+2, 3+j] = self.m_planets[j] / self.M_total
 
         self.M     = M
         self.M_inv = np.linalg.inv(M)
@@ -104,7 +106,7 @@ class WisdomHolman_SAB_P(object):
         if self.hjs_order.size <= 1:
             return
 
-        # Extract Cartesian state in HJS body order (A, B, planets..., C)
+        # Extract Cartesian state in HJS body order (A, B, C, planets...)
         x = self.particles.pos[self.hjs_order].copy()  # (n, 3)
         v = self.particles.vel[self.hjs_order].copy()  # (n, 3)
 
@@ -126,34 +128,33 @@ class WisdomHolman_SAB_P(object):
         X = X.copy()
         V = V.copy()
 
-        # Inner binary: B orbits A
-        X[0], V[0] = tools.propagate_kepler_universal(X[0], V[0], dt, self.GM_binary)
+        N = self.N_planets
 
-        # Circumbinary planets: each orbits binary COM
-        for j in range(self.N_planets):
-            X[1+j], V[1+j] = tools.propagate_kepler_universal(
-                X[1+j], V[1+j], dt, self.GM_planet
+        # Row 0: B orbits A (inner binary)
+        X[0], V[0] = tools.propagate_kepler_universal(X[0], V[0], dt, self.GM_B)
+
+        # Row 1: C orbits COM(A + B)
+        X[1], V[1] = tools.propagate_kepler_universal(X[1], V[1], dt, self.GM_C)
+
+        # Rows 2..N+1: planets orbit C
+        for j in range(N):
+            X[2+j], V[2+j] = tools.propagate_kepler_universal(
+                X[2+j], V[2+j], dt, self.GM_planet
             )
 
-        # Outer star C: orbits COM of (AB + planets)
-        X[1+self.N_planets], V[1+self.N_planets] = tools.propagate_kepler_universal(
-            X[1+self.N_planets], V[1+self.N_planets], dt, self.GM_outer
-        )
-
-        # Total COM drifts linearly
-        X[2+self.N_planets] += dt * V[2+self.N_planets]
+        # Row N+2: total COM drifts linearly
+        X[N+2] += dt * V[N+2]
 
         return X, V
 
     def _compute_accel(self, X, V):
         N = self.N_planets
-        n = N + 3   # A, B, planets..., C
+        n = N + 3  # A, B, C, planets...
 
-        # Recover Cartesian positions and velocities
-        x, _ = self.to_cart(X, V)  # (n, 3)
+        # Recover Cartesian positions (body order matches hjs_order: A, B, C, planets...)
+        x, _ = self.to_cart(X, V)
 
-        # Pairwise Cartesian accelerations for all physical bodies
-        masses = np.concatenate([[self.mA, self.mB], self.m_planets, [self.mC]])
+        masses = np.concatenate([[self.mA, self.mB, self.mC], self.m_planets])
         a = np.zeros((n, 3))
         for k in range(n):
             for j in range(n):
@@ -164,26 +165,26 @@ class WisdomHolman_SAB_P(object):
                 a[k] += self.G * masses[j] * r_vec / r**3
 
         # Transform to HJS accelerations: A_full = M @ a_cart
-        A = self.M @ a  # (n, 3)
+        A = self.M @ a
 
         # Subtract Keplerian components so only the perturbation remains.
-        # A_kep = -GM * X / |X|^3  =>  A_pert = A_full - A_kep = A_full + GM * X / |X|^3
+        # A_kep = -GM * X / |X|^3  =>  A_pert = A_full + GM * X / |X|^3
 
-        # Binary
+        # Row 0: B (inner binary)
         R_B = np.linalg.norm(X[0])
-        A[0] += self.GM_binary * X[0] / R_B**3
+        A[0] += self.GM_B * X[0] / R_B**3
 
-        # Each planet
+        # Row 1: C
+        R_C = np.linalg.norm(X[1])
+        A[1] += self.GM_C * X[1] / R_C**3
+
+        # Rows 2..N+1: planets
         for j in range(N):
-            R_j = np.linalg.norm(X[1+j])
-            A[1+j] += self.GM_planet * X[1+j] / R_j**3
+            R_j = np.linalg.norm(X[2+j])
+            A[2+j] += self.GM_planet * X[2+j] / R_j**3
 
-        # Outer star C
-        R_C = np.linalg.norm(X[1+N])
-        A[1+N] += self.GM_outer * X[1+N] / R_C**3
-
-        # COM coordinate: no perturbation (COM drifts freely)
-        A[2+N] = np.zeros(3)
+        # Row N+2: COM coordinate — no perturbation
+        A[N+2] = np.zeros(3)
 
         return A
 

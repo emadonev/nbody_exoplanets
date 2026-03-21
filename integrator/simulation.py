@@ -1,7 +1,7 @@
 import numpy as np
-from data_io import DataIO
-from physics import Physics
-import tools
+from .data_io import DataIO
+from .physics import Physics
+from . import tools
 
 class Simulation(object):
     def __init__(self, particles, integrator, dataio: DataIO, physics: Physics):
@@ -20,15 +20,14 @@ class Simulation(object):
         # initialize buffer
         self.dataio.initialize_buffer(self.particles.N)
 
-        # track time and step
-        t = float(t0)
-        step = 0
+        # total number of steps is fixed — independent of output_every_n
+        n_steps = int(np.ceil((float(tf) - float(t0)) / float(dt)))
 
         # store initial snapshot
-        self._store_snapshot(t)
+        self._store_snapshot(float(t0))
 
-        # time loop
-        while t < tf:
+        # time loop driven by integer counter to avoid float accumulation
+        for step in range(1, n_steps + 1):
             # perform step
             self.integrator.propagate()
 
@@ -40,9 +39,8 @@ class Simulation(object):
             if handle_collisions:
                 self._handle_collisions()
 
-            # update time and step
-            t += dt
-            step += 1
+            # compute time exactly from t0 to avoid drift
+            t = float(t0) + step * float(dt)
 
             self.Ms, self.rs, self.vs = self.particles.resolve_primary_state(self.particles.primary)
 
