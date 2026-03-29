@@ -48,6 +48,7 @@ class Simulation(object):
                 self._store_snapshot(t)
         
         self.dataio.close()
+        return self.dataio.output_name
 
     def _handle_collisions(self):
         active = self.particles.active_indices
@@ -62,15 +63,16 @@ class Simulation(object):
 
     def _store_snapshot(self, t):
         E = self.physics.energy(self.particles) # compute energy at this step
-        temp = self.physics.calculate_temp(self.particles) # compute temperatures at this step
+        temp, hz_data = self.physics.calculate_temp(self.particles) # compute temperatures & HZ at this step
 
         pos_rel = self.particles.pos - self.rs # position relative to the PRIMARY
         vel_rel = self.particles.vel - self.vs # velocity relative to the PRIMARY
 
         # allocate for a, e, i
-        a = np.full(self.particles.N, np.nan, dtype=float)
-        e = np.full(self.particles.N, np.nan, dtype=float)
-        inc = np.full(self.particles.N, np.nan, dtype=float)
+        N = self.particles.N
+        a = np.full(N, np.nan, dtype=float)
+        e = np.full(N, np.nan, dtype=float)
+        inc = np.full(N, np.nan, dtype=float)
 
         # Orbital elements are only meaningful for orbiting bodies.
         # Exclude stars/primaries to avoid r=0 singularities in diagnostics.
@@ -87,7 +89,18 @@ class Simulation(object):
             a[orbit_idx] = a_act
             e[orbit_idx] = e_act
             inc[orbit_idx] = inc_act
-        
+
+        # build per-particle HZ arrays from hz_data (NaN for stars)
+        F_bol = np.full(N, np.nan, dtype=float)
+        F_sw_inner = np.full(N, np.nan, dtype=float)
+        F_sw_outer = np.full(N, np.nan, dtype=float)
+        in_hz = np.full(N, np.nan, dtype=float)
+        for k, hzd in hz_data.items():
+            F_bol[k] = hzd['F_bol']
+            F_sw_inner[k] = hzd['F_sw_inner']
+            F_sw_outer[k] = hzd['F_sw_outer']
+            in_hz[k] = float(hzd['in_hz'])
+
         self.dataio.store_state(
             t=t,
             pos=self.particles.positions,
@@ -100,5 +113,9 @@ class Simulation(object):
             a=a,
             e=e,
             inc=inc,
-            energy=E
+            energy=E,
+            F_bol=F_bol,
+            F_sw_inner=F_sw_inner,
+            F_sw_outer=F_sw_outer,
+            in_hz=in_hz,
         )

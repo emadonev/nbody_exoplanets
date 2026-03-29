@@ -10,3 +10,4 @@ from .WH_SA_P import WisdomHolman_SA_P
 from .WH_SB_P import WisdomHolman_SB_P
 from .WH_SC_P import WisdomHolman_SC_P
 from .WH_SABC_P import WisdomHolman_SABC_P
+from .batch import run_system

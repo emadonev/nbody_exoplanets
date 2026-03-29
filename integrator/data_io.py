@@ -44,6 +44,12 @@ class DataIO(object):
         self.buf_a = None
         self.buf_e = None
         self.buf_i = None
+
+        # habitable zone diagnostics (per particle, NaN for stars)
+        self.buf_F_bol = None
+        self.buf_F_sw_inner = None
+        self.buf_F_sw_outer = None
+        self.buf_in_hz = None
         
 
         self.buf_cursor = 0
@@ -84,6 +90,11 @@ class DataIO(object):
         self.buf_e = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
         self.buf_i = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
 
+        self.buf_F_bol = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+        self.buf_F_sw_inner = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+        self.buf_F_sw_outer = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+        self.buf_in_hz = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+
         self.buf_cursor = 0
         self.h5_step_id = 0
 
@@ -103,6 +114,9 @@ class DataIO(object):
             return
         
         if self.h5_file is None:
+            out_dir = os.path.dirname(self.output_name)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
             self.h5_file = h5py.File(self.output_name, "w") # if we haven't started writing a file, create one
             self.h5_file.attrs['G'] = self.const_g # assign the constant G
 
@@ -123,6 +137,10 @@ class DataIO(object):
             "a": self.buf_a[sl],
             "e": self.buf_e[sl],
             "inc": self.buf_i[sl],
+            "F_bol": self.buf_F_bol[sl],
+            "F_sw_inner": self.buf_F_sw_inner[sl],
+            "F_sw_outer": self.buf_F_sw_outer[sl],
+            "in_hz": self.buf_in_hz[sl],
         }
 
         # save data to the hdf5 file
@@ -159,6 +177,10 @@ class DataIO(object):
             e: np.ndarray,
             inc: np.ndarray,
             energy: float,
+            F_bol: np.ndarray = None,
+            F_sw_inner: np.ndarray = None,
+            F_sw_outer: np.ndarray = None,
+            in_hz: np.ndarray = None,
     ):
         '''
         store_state - store the desired state of every parameter within simulation, and then later
@@ -195,6 +217,15 @@ class DataIO(object):
 
         if energy is not None:
             self.buf_energy[self.buf_cursor] = float(energy)
+
+        if F_bol is not None:
+            self.buf_F_bol[self.buf_cursor] = np.asarray(F_bol, dtype=np.float64).reshape(-1)
+        if F_sw_inner is not None:
+            self.buf_F_sw_inner[self.buf_cursor] = np.asarray(F_sw_inner, dtype=np.float64).reshape(-1)
+        if F_sw_outer is not None:
+            self.buf_F_sw_outer[self.buf_cursor] = np.asarray(F_sw_outer, dtype=np.float64).reshape(-1)
+        if in_hz is not None:
+            self.buf_in_hz[self.buf_cursor] = np.asarray(in_hz, dtype=np.float64).reshape(-1)
 
         self.buf_cursor += 1
 
