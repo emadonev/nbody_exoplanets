@@ -42,6 +42,17 @@ def _safe(val, default=0.0):
     return val
 
 
+def _has_valid_orbit(config, prefix):
+    """Check if an orbit (inner_ or outer_) has a valid semi-major axis."""
+    a = config.get(f'{prefix}_a')
+    if a is None:
+        return False
+    try:
+        return np.isfinite(a) and a > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def run_system(config: dict) -> str:
     """
     Run a single N-body simulation from a serializable config dict.
@@ -84,6 +95,18 @@ def run_system(config: dict) -> str:
     """
     stype = config['system_type']
     host = config['host_star']
+
+    # --- validate orbital elements ---
+    if not _has_valid_orbit(config, 'inner'):
+        raise ValueError(
+            f"System '{config.get('output_file', '?')}': inner binary orbit has no valid "
+            f"semi-major axis (inner_a={config.get('inner_a')}). Cannot integrate."
+        )
+    if not _has_valid_orbit(config, 'outer'):
+        raise ValueError(
+            f"System '{config.get('output_file', '?')}': outer orbit has no valid "
+            f"semi-major axis (outer_a={config.get('outer_a')}). Cannot integrate."
+        )
 
     # --- build particles ---
     particles = Particles(constants.G, system_type=stype)
