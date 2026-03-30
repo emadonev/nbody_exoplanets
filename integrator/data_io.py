@@ -99,6 +99,8 @@ class DataIO(object):
         self.h5_step_id = 0
 
         # if we have leftover files with the same name, remove them beforehand
+        if self.output_name and os.path.isfile(self.output_name):
+            os.remove(self.output_name)
         if self.collision_name and os.path.isfile(self.collision_name):
             os.remove(self.collision_name)
 
