@@ -1,5 +1,6 @@
 import numpy as np
 from . import tools
+from numba import njit
 
 class WisdomHolman_SABC_P(object):
     '''
@@ -152,6 +153,7 @@ class WisdomHolman_SABC_P(object):
 
         return X, V
 
+    @njit
     def _compute_accel(self, X, V):
         N = self.N_planets
         n = N + 3  # A, B, C, planets...

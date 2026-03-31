@@ -102,7 +102,7 @@ def _shortest_period(config: dict) -> float:
     return min(periods)
 
 
-def recommended_dt(config: dict, steps_per_shortest_orbit: int = 20) -> float:
+def recommended_dt(config: dict, steps_per_shortest_orbit: int = 10) -> float:
     """
     Recommend a timestep from the shortest Keplerian orbit in the system.
 
@@ -117,21 +117,27 @@ def recommended_dt(config: dict, steps_per_shortest_orbit: int = 20) -> float:
 def recommended_output_every_n(
     config: dict,
     dt: float | None = None,
-    samples_per_shortest_orbit: int = 10,
+    target_snapshots: int = 1000,
 ) -> int:
     """
-    Recommend a snapshot stride that resolves the shortest orbit in plots.
+    Recommend a snapshot stride that produces approximately *target_snapshots*
+    total output snapshots over the full simulation.
+
+    For secular-evolution / habitability studies, orbital-phase resolution is
+    unnecessary — evenly spaced snapshots capture long-term trends well
+    while keeping file sizes manageable.
     """
-    if samples_per_shortest_orbit <= 0:
-        raise ValueError("samples_per_shortest_orbit must be positive")
+    if target_snapshots <= 0:
+        raise ValueError("target_snapshots must be positive")
     if dt is None:
         dt = float(config['dt'])
     dt = float(dt)
     if not np.isfinite(dt) or dt <= 0.0:
         raise ValueError(f"dt must be positive and finite, got {dt}")
-    shortest_period = _shortest_period(config)
-    max_stride = shortest_period / float(samples_per_shortest_orbit)
-    return max(1, int(np.floor(max_stride / dt)))
+    t0 = float(config.get('t0', 0.0))
+    tf = float(config['tf'])
+    n_steps = int(np.ceil((tf - t0) / dt))
+    return max(1, int(np.floor(n_steps / target_snapshots)))
 
 
 def run_system(config: dict) -> str:

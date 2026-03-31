@@ -157,9 +157,9 @@ class DataIO(object):
             "hz_outer_radius": self.buf_hz_outer_radius[sl],
         }
 
-        # save data to the hdf5 file
+        # save data to the hdf5 file (gzip level 4: good compression/speed trade-off)
         for k, v in state_dict.items():
-            h5_step_group.create_dataset(k, data=v)
+            h5_step_group.create_dataset(k, data=v, compression='gzip', compression_opts=4)
 
         # reset cursor
         self.h5_file.flush()
