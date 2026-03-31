@@ -18,6 +18,7 @@ INTEGRATOR_MAP = {
     'S(C)':   WisdomHolman_SC_P,
     'S(AB)':  WisdomHolman_SAB_P,
     'P(ABC)': WisdomHolman_SABC_P,
+    'S(ABC)-P': WisdomHolman_SABC_P,
 }
 
 # Maps host_star label to the primary= argument for planet particles.
@@ -51,6 +52,86 @@ def _has_valid_orbit(config, prefix):
         return np.isfinite(a) and a > 0
     except (TypeError, ValueError):
         return False
+
+
+def _orbital_period(a, mu):
+    """Return the Keplerian period in code units."""
+    a = float(a)
+    mu = float(mu)
+    if not (np.isfinite(a) and a > 0.0):
+        raise ValueError(f"semi-major axis must be finite and positive, got {a}")
+    if not (np.isfinite(mu) and mu > 0.0):
+        raise ValueError(f"mu must be finite and positive, got {mu}")
+    return 2.0 * np.pi * np.sqrt(a**3 / mu)
+
+
+def _planet_mu(config, host, mass_earth):
+    """Return the two-body mu for a planet around the selected host."""
+    mp = float(mass_earth) * 3.00274e-6  # M_earth -> M_sun
+    mA = float(config['mA'])
+    mB = float(config['mB'])
+    mC = float(config['mC'])
+    if host == 'A':
+        return constants.G * (mA + mp)
+    if host == 'B':
+        return constants.G * (mB + mp)
+    if host == 'C':
+        return constants.G * (mC + mp)
+    if host == 'AB':
+        return constants.G * (mA + mB + mp)
+    if host == 'ABC':
+        return constants.G * (mA + mB + mC + mp)
+    raise ValueError(f"Unsupported host_star {host!r}")
+
+
+def _shortest_period(config: dict) -> float:
+    """Return the shortest Keplerian period present in the system."""
+    periods = []
+
+    mu_inner = constants.G * (float(config['mA']) + float(config['mB']))
+    periods.append(_orbital_period(config['inner_a'], mu_inner))
+
+    mu_outer = constants.G * (float(config['mA']) + float(config['mB']) + float(config['mC']))
+    periods.append(_orbital_period(config['outer_a'], mu_outer))
+
+    host = config['host_star']
+    for pl in config.get('planets', []):
+        mu_planet = _planet_mu(config, host, pl['mass_earth'])
+        periods.append(_orbital_period(pl['a'], mu_planet))
+
+    return min(periods)
+
+
+def recommended_dt(config: dict, steps_per_shortest_orbit: int = 20) -> float:
+    """
+    Recommend a timestep from the shortest Keplerian orbit in the system.
+
+    This protects the WH drift from being asked to step over many orbital
+    periods of a close-in planet.
+    """
+    if steps_per_shortest_orbit <= 0:
+        raise ValueError("steps_per_shortest_orbit must be positive")
+    return _shortest_period(config) / float(steps_per_shortest_orbit)
+
+
+def recommended_output_every_n(
+    config: dict,
+    dt: float | None = None,
+    samples_per_shortest_orbit: int = 10,
+) -> int:
+    """
+    Recommend a snapshot stride that resolves the shortest orbit in plots.
+    """
+    if samples_per_shortest_orbit <= 0:
+        raise ValueError("samples_per_shortest_orbit must be positive")
+    if dt is None:
+        dt = float(config['dt'])
+    dt = float(dt)
+    if not np.isfinite(dt) or dt <= 0.0:
+        raise ValueError(f"dt must be positive and finite, got {dt}")
+    shortest_period = _shortest_period(config)
+    max_stride = shortest_period / float(samples_per_shortest_orbit)
+    return max(1, int(np.floor(max_stride / dt)))
 
 
 def run_system(config: dict) -> str:
@@ -106,6 +187,17 @@ def run_system(config: dict) -> str:
         raise ValueError(
             f"System '{config.get('output_file', '?')}': outer orbit has no valid "
             f"semi-major axis (outer_a={config.get('outer_a')}). Cannot integrate."
+        )
+
+    dt = float(config['dt'])
+    if not np.isfinite(dt) or dt <= 0.0:
+        raise ValueError(f"dt must be positive and finite, got {config['dt']}")
+
+    dt_recommended = recommended_dt(config)
+    if dt > dt_recommended:
+        raise ValueError(
+            f"dt={dt:.6g} is too large for this system. "
+            f"Recommended dt <= {dt_recommended:.6g} based on the shortest orbit."
         )
 
     # --- build particles ---
@@ -181,7 +273,7 @@ def run_system(config: dict) -> str:
     output_path = sim.run(
         t0=config.get('t0', 0.0),
         tf=config['tf'],
-        dt=config['dt'],
+        dt=dt,
         output_every_n=int(config.get('output_every_n', 5)),
         handle_collisions=bool(config.get('handle_collisions', False)),
     )

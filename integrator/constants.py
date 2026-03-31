@@ -12,6 +12,7 @@ sb = 5.67*10**(-8)
 
 # Solar luminosity (W)
 L_sun = 3.828e26
+R_sun = 6.957e8
 
 # HZ constants (Kopparapu et al. 2013, empirical limits)
 # S_eff_sun: effective stellar flux at the HZ boundary for the Sun

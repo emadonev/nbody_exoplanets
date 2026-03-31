@@ -110,6 +110,54 @@ class Physics(object):
         S0 = constants.S_eff_sun_inner if boundary == 'inner' else constants.S_eff_sun_outer
         return self._s_eff(T_star, boundary) / S0
 
+    def stellar_luminosity_ratio(self, radius_solar, temperature_kelvin):
+        """
+        Return stellar luminosity in units of L_sun.
+
+        Parameters may be scalars or numpy-like arrays.
+        """
+        radius_solar = np.asarray(radius_solar, dtype=float)
+        temperature_kelvin = np.asarray(temperature_kelvin, dtype=float)
+        radii_m = radius_solar * constants.R_sun
+        luminosity_w = 4.0 * np.pi * radii_m**2 * constants.sb * temperature_kelvin**4
+        return luminosity_w / constants.L_sun
+
+    def static_habitable_zone(self, radius_solar, temperature_kelvin):
+        """
+        Approximate a static habitable zone for a host star or co-located host stars.
+
+        For multi-star hosts we collapse the host to a single effective source by
+        summing luminosities and using a luminosity-weighted temperature. This is
+        intended for seeding synthetic planets before integration, not as a full
+        dynamical HZ treatment.
+        """
+        radii = np.atleast_1d(np.asarray(radius_solar, dtype=float))
+        temps = np.atleast_1d(np.asarray(temperature_kelvin, dtype=float))
+        if radii.shape != temps.shape:
+            raise ValueError("radius_solar and temperature_kelvin must have the same shape")
+
+        valid = np.isfinite(radii) & np.isfinite(temps) & (radii > 0.0) & (temps > 0.0)
+        if not np.any(valid):
+            raise ValueError("host HZ requires at least one finite positive radius/temperature pair")
+
+        radii = radii[valid]
+        temps = temps[valid]
+        luminosities = np.atleast_1d(self.stellar_luminosity_ratio(radii, temps))
+        total_luminosity = float(np.sum(luminosities))
+        effective_temperature = float(np.average(temps, weights=luminosities))
+
+        s_eff_inner = float(self._s_eff(effective_temperature, 'inner'))
+        s_eff_outer = float(self._s_eff(effective_temperature, 'outer'))
+
+        return {
+            'luminosity_ratio': total_luminosity,
+            'effective_temperature': effective_temperature,
+            'S_eff_inner': s_eff_inner,
+            'S_eff_outer': s_eff_outer,
+            'inner_radius': float(np.sqrt(total_luminosity / s_eff_inner)),
+            'outer_radius': float(np.sqrt(total_luminosity / s_eff_outer)),
+        }
+
     def calculate_temp(self, particles):
         star_idx = particles.star_indices
         planet_idx = particles.planet_indices
@@ -117,9 +165,14 @@ class Physics(object):
         if star_idx.size == 0 or planet_idx.size == 0:
             return particles.temperatures, {}
 
-        # luminosities in Watts, then convert to solar units
-        L_W = 4.0 * np.pi * particles.radii[star_idx]**2 * constants.sb * particles.temperatures[star_idx]**4
-        L_ratio = L_W / constants.L_sun  # L_i / L_sun
+        # Stellar radii are stored in solar radii, so convert to meters before
+        # applying the Stefan-Boltzmann law.
+        L_ratio = np.atleast_1d(
+            self.stellar_luminosity_ratio(
+                particles.radii[star_idx],
+                particles.temperatures[star_idx],
+            )
+        )
 
         hz_data = {}
 
@@ -147,6 +200,11 @@ class Physics(object):
             S_eff_inner = self._s_eff(T_host, 'inner')
             S_eff_outer = self._s_eff(T_host, 'outer')
 
+            # Host-only circular HZ radii in AU, useful for host-centric plots.
+            L_host = L_ratio[host_local]
+            hz_inner_radius = np.sqrt(L_host / S_eff_inner)
+            hz_outer_radius = np.sqrt(L_host / S_eff_outer)
+
             # --- Step 3: total bolometric flux (solar units) & HZ check ---
             F_bol = float(np.sum(L_ratio[dists > 0] / dists[dists > 0]**2))
             in_hz = (S_eff_outer < F_bol < S_eff_inner)
@@ -162,6 +220,8 @@ class Physics(object):
                 'F_sw_outer': F_sw_outer,
                 'S_eff_inner': S_eff_inner,
                 'S_eff_outer': S_eff_outer,
+                'hz_inner_radius': hz_inner_radius,
+                'hz_outer_radius': hz_outer_radius,
                 'T_eq': T_eq,
             }
 

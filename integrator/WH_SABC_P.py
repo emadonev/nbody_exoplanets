@@ -50,9 +50,11 @@ class WisdomHolman_SABC_P(object):
 
         # GM parameters for Kepler solvers.
         # A and B are a true binary of comparable mass — use full two-body GM.
-        self.GM_B      = self.G * self.m_inner  # B orbits A: GM = G*(mA+mB)
-        self.GM_C      = self.G * self.m_inner  # C orbits COM(A+B): GM = G*(mA+mB)
-        self.GM_planet = self.G * self.m_mid      # planets orbit COM(A+B+C)
+        self.GM_B = self.G * self.m_inner  # B orbits A: GM = G*(mA+mB)
+        # C and the inner pair form a true two-body orbit.
+        self.GM_C = self.G * (self.m_inner + self.mC)
+        # Each planet has its own two-body GM with the inner triple COM.
+        self.GM_planets = self.G * (self.m_mid + self.m_planets)
 
         # HJS body order in the particles array: A, B, C, planet_0..N-1
         self.hjs_order = np.array(
@@ -142,7 +144,7 @@ class WisdomHolman_SABC_P(object):
         # Rows 2..N+1: planets orbit COM(A+B+C)
         for j in range(N):
             X[2+j], V[2+j] = tools.propagate_kepler_universal(
-                X[2+j], V[2+j], dt, self.GM_planet
+                X[2+j], V[2+j], dt, self.GM_planets[j]
             )
 
         # Row N+2: total COM drifts linearly
@@ -184,7 +186,7 @@ class WisdomHolman_SABC_P(object):
         # Rows 2..N+1: planets
         for j in range(N):
             R_j = np.linalg.norm(X[2+j])
-            A[2+j] += self.GM_planet * X[2+j] / R_j**3
+            A[2+j] += self.GM_planets[j] * X[2+j] / R_j**3
 
         # Row N+2: COM coordinate — no perturbation
         A[N+2] = np.zeros(3)

@@ -95,11 +95,19 @@ class Simulation(object):
         F_sw_inner = np.full(N, np.nan, dtype=float)
         F_sw_outer = np.full(N, np.nan, dtype=float)
         in_hz = np.full(N, np.nan, dtype=float)
+        S_eff_inner = np.full(N, np.nan, dtype=float)
+        S_eff_outer = np.full(N, np.nan, dtype=float)
+        hz_inner_radius = np.full(N, np.nan, dtype=float)
+        hz_outer_radius = np.full(N, np.nan, dtype=float)
         for k, hzd in hz_data.items():
             F_bol[k] = hzd['F_bol']
             F_sw_inner[k] = hzd['F_sw_inner']
             F_sw_outer[k] = hzd['F_sw_outer']
             in_hz[k] = float(hzd['in_hz'])
+            S_eff_inner[k] = hzd['S_eff_inner']
+            S_eff_outer[k] = hzd['S_eff_outer']
+            hz_inner_radius[k] = hzd['hz_inner_radius']
+            hz_outer_radius[k] = hzd['hz_outer_radius']
 
         self.dataio.store_state(
             t=t,
@@ -118,4 +126,8 @@ class Simulation(object):
             F_sw_inner=F_sw_inner,
             F_sw_outer=F_sw_outer,
             in_hz=in_hz,
+            S_eff_inner=S_eff_inner,
+            S_eff_outer=S_eff_outer,
+            hz_inner_radius=hz_inner_radius,
+            hz_outer_radius=hz_outer_radius,
         )

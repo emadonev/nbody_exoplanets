@@ -50,6 +50,10 @@ class DataIO(object):
         self.buf_F_sw_inner = None
         self.buf_F_sw_outer = None
         self.buf_in_hz = None
+        self.buf_S_eff_inner = None
+        self.buf_S_eff_outer = None
+        self.buf_hz_inner_radius = None
+        self.buf_hz_outer_radius = None
         
 
         self.buf_cursor = 0
@@ -94,6 +98,10 @@ class DataIO(object):
         self.buf_F_sw_inner = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
         self.buf_F_sw_outer = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
         self.buf_in_hz = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+        self.buf_S_eff_inner = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+        self.buf_S_eff_outer = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+        self.buf_hz_inner_radius = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
+        self.buf_hz_outer_radius = np.full((buf_len, n_particles), np.nan, dtype=np.float64)
 
         self.buf_cursor = 0
         self.h5_step_id = 0
@@ -143,6 +151,10 @@ class DataIO(object):
             "F_sw_inner": self.buf_F_sw_inner[sl],
             "F_sw_outer": self.buf_F_sw_outer[sl],
             "in_hz": self.buf_in_hz[sl],
+            "S_eff_inner": self.buf_S_eff_inner[sl],
+            "S_eff_outer": self.buf_S_eff_outer[sl],
+            "hz_inner_radius": self.buf_hz_inner_radius[sl],
+            "hz_outer_radius": self.buf_hz_outer_radius[sl],
         }
 
         # save data to the hdf5 file
@@ -183,6 +195,10 @@ class DataIO(object):
             F_sw_inner: np.ndarray = None,
             F_sw_outer: np.ndarray = None,
             in_hz: np.ndarray = None,
+            S_eff_inner: np.ndarray = None,
+            S_eff_outer: np.ndarray = None,
+            hz_inner_radius: np.ndarray = None,
+            hz_outer_radius: np.ndarray = None,
     ):
         '''
         store_state - store the desired state of every parameter within simulation, and then later
@@ -228,6 +244,14 @@ class DataIO(object):
             self.buf_F_sw_outer[self.buf_cursor] = np.asarray(F_sw_outer, dtype=np.float64).reshape(-1)
         if in_hz is not None:
             self.buf_in_hz[self.buf_cursor] = np.asarray(in_hz, dtype=np.float64).reshape(-1)
+        if S_eff_inner is not None:
+            self.buf_S_eff_inner[self.buf_cursor] = np.asarray(S_eff_inner, dtype=np.float64).reshape(-1)
+        if S_eff_outer is not None:
+            self.buf_S_eff_outer[self.buf_cursor] = np.asarray(S_eff_outer, dtype=np.float64).reshape(-1)
+        if hz_inner_radius is not None:
+            self.buf_hz_inner_radius[self.buf_cursor] = np.asarray(hz_inner_radius, dtype=np.float64).reshape(-1)
+        if hz_outer_radius is not None:
+            self.buf_hz_outer_radius[self.buf_cursor] = np.asarray(hz_outer_radius, dtype=np.float64).reshape(-1)
 
         self.buf_cursor += 1
 
