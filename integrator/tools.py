@@ -349,3 +349,23 @@ def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
     r_vec1 = f * r0_vec + g * v0_vec
     v_vec1 = fdot * r0_vec + gdot * v0_vec
     return r_vec1, v_vec1
+
+
+@njit
+def accel_pairs(x, masses, G, n):
+    """All-pairs gravitational acceleration (Numba-jitted)."""
+    a = np.zeros((n, 3))
+    for k in range(n):
+        for j in range(n):
+            if j == k:
+                continue
+            rx = x[j, 0] - x[k, 0]
+            ry = x[j, 1] - x[k, 1]
+            rz = x[j, 2] - x[k, 2]
+            r2 = rx * rx + ry * ry + rz * rz
+            inv_r3 = 1.0 / (r2 * math.sqrt(r2))
+            fac = G * masses[j] * inv_r3
+            a[k, 0] += fac * rx
+            a[k, 1] += fac * ry
+            a[k, 2] += fac * rz
+    return a

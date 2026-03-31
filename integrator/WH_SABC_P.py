@@ -1,6 +1,5 @@
 import numpy as np
 from . import tools
-from numba import njit
 
 class WisdomHolman_SABC_P(object):
     '''
@@ -153,7 +152,6 @@ class WisdomHolman_SABC_P(object):
 
         return X, V
 
-    @njit
     def _compute_accel(self, X, V):
         N = self.N_planets
         n = N + 3  # A, B, C, planets...
@@ -162,14 +160,7 @@ class WisdomHolman_SABC_P(object):
         x, _ = self.to_cart(X, V)
 
         masses = np.concatenate([[self.mA, self.mB, self.mC], self.m_planets])
-        a = np.zeros((n, 3))
-        for k in range(n):
-            for j in range(n):
-                if j == k:
-                    continue
-                r_vec = x[j] - x[k]
-                r = np.linalg.norm(r_vec)
-                a[k] += self.G * masses[j] * r_vec / r**3
+        a = tools.accel_pairs(x, masses, self.G, n)
 
         # Transform to HJS accelerations: A_full = M @ a_cart
         A = self.M @ a
