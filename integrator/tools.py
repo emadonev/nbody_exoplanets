@@ -94,146 +94,7 @@ def aei(mp, Ms, pos, vel, G):
 
     return a, e, i
 
-# -----------
-# jacobi
-# -----------
-
-def cart2jacobi(x, masses, N, eta):
-    x = np.asarray(x, dtype=float).reshape(-1)
-    masses = np.asarray(masses, dtype=float).reshape(-1)
-
-    if masses.size != N:
-        raise ValueError(f"masses must have size N (= {N})")
-    if x.size != 6 * N:
-        raise ValueError(f"x must have size 6N (= {6*N})")
-    
-    pos = x[: 3 * N].reshape(N, 3)
-    vel = x[3 * N :].reshape(N, 3)
-
-    if eta is None:
-        eta = np.cumsum(masses)
-    else:
-        eta = np.asarray(eta, dtype=float).reshape(-1)
-        if eta.size != N:
-            raise ValueError(f"eta must have size N (= {N})")
-
-    jac_pos = np.zeros_like(pos)
-    jac_vel = np.zeros_like(vel)
-
-    # Jacobi coordinate 0 stores the barycenter position/velocity.
-    jac_pos[0] = np.sum(masses[:, None] * pos, axis=0) / eta[-1]
-    jac_vel[0] = np.sum(masses[:, None] * vel, axis=0) / eta[-1]
-
-    # Running COM of interior bodies 0..i-1.
-    com_pos = pos[0].copy()
-    com_vel = vel[0].copy()
-    for i in range(1, N):
-        jac_pos[i] = pos[i] - com_pos
-        jac_vel[i] = vel[i] - com_vel
-
-        com_pos = com_pos + (masses[i] / eta[i]) * jac_pos[i]
-        com_vel = com_vel + (masses[i] / eta[i]) * jac_vel[i]
-
-    return np.concatenate([jac_pos.reshape(-1), jac_vel.reshape(-1)])
-
-def jacobi2cart(x, masses, N, eta):
-    x = np.asarray(x, dtype=float).reshape(-1)
-    masses = np.asarray(masses, dtype=float).reshape(-1)
-
-    if masses.size != N:
-        raise ValueError(f"masses must have size N (= {N})")
-    if x.size != 6 * N:
-        raise ValueError(f"x must have size 6N (= {6*N})")
-
-    jac_pos = x[: 3 * N].reshape(N, 3)
-    jac_vel = x[3 * N :].reshape(N, 3)
-
-    if eta is None:
-        eta = np.cumsum(masses)
-    else:
-        eta = np.asarray(eta, dtype=float).reshape(-1)
-        if eta.size != N:
-            raise ValueError(f"eta must have size N (= {N})")
-
-    cart_pos = np.zeros_like(jac_pos)
-    cart_vel = np.zeros_like(jac_vel)
-
-    # Recover body 0 from barycenter and Jacobi offsets.
-    cart_pos[0] = jac_pos[0].copy()
-    cart_vel[0] = jac_vel[0].copy()
-    for i in range(1, N):
-        cart_pos[0] -= (masses[i] / eta[i]) * jac_pos[i]
-        cart_vel[0] -= (masses[i] / eta[i]) * jac_vel[i]
-
-    # Rebuild remaining bodies from running interior COM.
-    com_pos = cart_pos[0].copy()
-    com_vel = cart_vel[0].copy()
-    for i in range(1, N):
-        cart_pos[i] = jac_pos[i] + com_pos
-        cart_vel[i] = jac_vel[i] + com_vel
-
-        com_pos = com_pos + (masses[i] / eta[i]) * jac_pos[i]
-        com_vel = com_vel + (masses[i] / eta[i]) * jac_vel[i]
-
-    return np.concatenate([cart_pos.reshape(-1), cart_vel.reshape(-1)])
-
-# HIERARCHICAL JACOBI
-# -----
-
-def cart2HJS(x, M, N=None):
-    x = np.asarray(x, dtype=float).reshape(-1)
-
-    M = np.asarray(M, dtype=float)
-    if M.ndim != 2 or M.shape[0] != M.shape[1]:
-        raise ValueError("M must be a square matrix")
-    if N is None:
-        N = M.shape[0]
-    else:
-        N = int(N)
-
-    if x.size != 6 * N:
-        raise ValueError(f"x must have size 6N (= {6*N})")
-
-    if M.shape != (N, N):
-        raise ValueError(f"M must have shape ({N}, {N})")
-
-    pos = x[:3 * N].reshape(N, 3)
-    vel = x[3 * N:].reshape(N, 3)
-
-    hjs_pos = M @ pos
-    hjs_vel = M @ vel
-
-    return np.concatenate([hjs_pos.reshape(-1), hjs_vel.reshape(-1)])
-
-def HJS2cart(x, M, N=None):
-    x = np.asarray(x, dtype=float).reshape(-1)
-
-    M = np.asarray(M, dtype=float)
-    if M.ndim != 2 or M.shape[0] != M.shape[1]:
-        raise ValueError("M must be a square matrix")
-    if N is None:
-        N = M.shape[0]
-    else:
-        N = int(N)
-
-    if x.size != 6 * N:
-        raise ValueError(f"x must have size 6N (= {6*N})")
-
-    if M.shape != (N, N):
-        raise ValueError(f"M must have shape ({N}, {N})")
-
-    hjs_pos = x[:3 * N].reshape(N, 3)
-    hjs_vel = x[3 * N:].reshape(N, 3)
-
-    M_inv = np.linalg.inv(M)
-
-    pos = M_inv @ hjs_pos
-    vel = M_inv @ hjs_vel
-
-    return np.concatenate([pos.reshape(-1), vel.reshape(-1)])
-
-# -------
-
+# stumpff functions!
 @njit
 def stumpff_functions(z):
     z = float(z)
@@ -350,10 +211,9 @@ def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
     v_vec1 = fdot * r0_vec + gdot * v0_vec
     return r_vec1, v_vec1
 
-
+# pairwise acceleration  calculation
 @njit
 def accel_pairs(x, masses, G, n):
-    """All-pairs gravitational acceleration (Numba-jitted)."""
     a = np.zeros((n, 3))
     for k in range(n):
         for j in range(n):

@@ -4,21 +4,14 @@ from .particle import Particle
 from .physics import Physics
 from .data_io import DataIO
 from .simulation import Simulation
-from .WH_SA_P import WisdomHolman_SA_P
-from .WH_SB_P import WisdomHolman_SB_P
 from .WH_SC_P import WisdomHolman_SC_P
-from .WH_SAB_P import WisdomHolman_SAB_P
-from .WH_SABC_P import WisdomHolman_SABC_P
 from . import constants
+import h5py
+
 
 # Maps system type strings to their integrator classes.
 INTEGRATOR_MAP = {
-    'S(A)':   WisdomHolman_SA_P,
-    'S(B)':   WisdomHolman_SB_P,
     'S(C)':   WisdomHolman_SC_P,
-    'S(AB)':  WisdomHolman_SAB_P,
-    'P(ABC)': WisdomHolman_SABC_P,
-    'S(ABC)-P': WisdomHolman_SABC_P,
 }
 
 # Maps host_star label to the primary= argument for planet particles.
@@ -30,21 +23,19 @@ HOST_PRIMARY_MAP = {
     'ABC': ['star A', 'star B', 'star C'],
 }
 
-
-def _safe(val, default=0.0):
-    """Replace NaN / None with a default value."""
-    if val is None:
+def _safe(value, default=0.0):
+    if value is None:
         return default
     try:
-        if np.isnan(val):
+        if np.isnan(value):
             return default
     except (TypeError, ValueError):
         pass
-    return val
+    return float(value)
 
 
+# check if semimajor axis is defined and if not set a default value
 def _has_valid_orbit(config, prefix):
-    """Check if an orbit (inner_ or outer_) has a valid semi-major axis."""
     a = config.get(f'{prefix}_a')
     if a is None:
         return False
@@ -53,9 +44,8 @@ def _has_valid_orbit(config, prefix):
     except (TypeError, ValueError):
         return False
 
-
+# calculate the keplerian period for best dt
 def _orbital_period(a, mu):
-    """Return the Keplerian period in code units."""
     a = float(a)
     mu = float(mu)
     if not (np.isfinite(a) and a > 0.0):
@@ -64,9 +54,8 @@ def _orbital_period(a, mu):
         raise ValueError(f"mu must be finite and positive, got {mu}")
     return 2.0 * np.pi * np.sqrt(a**3 / mu)
 
-
+# return mu for dt selection
 def _planet_mu(config, host, mass_earth):
-    """Return the two-body mu for a planet around the selected host."""
     mp = float(mass_earth) * 3.00274e-6  # M_earth -> M_sun
     mA = float(config['mA'])
     mB = float(config['mB'])
@@ -83,9 +72,8 @@ def _planet_mu(config, host, mass_earth):
         return constants.G * (mA + mB + mC + mp)
     raise ValueError(f"Unsupported host_star {host!r}")
 
-
+# select the shortest period in the system
 def _shortest_period(config: dict) -> float:
-    """Return the shortest Keplerian period present in the system."""
     periods = []
 
     mu_inner = constants.G * (float(config['mA']) + float(config['mB']))
@@ -101,49 +89,16 @@ def _shortest_period(config: dict) -> float:
 
     return min(periods)
 
-
+# the recommended time step based on the shortest period in the system - 1/10th of that is dt
 def recommended_dt(config: dict, steps_per_shortest_orbit: int = 10) -> float:
-    """
-    Recommend a timestep from the shortest Keplerian orbit in the system.
-
-    This protects the WH drift from being asked to step over many orbital
-    periods of a close-in planet.
-    """
     if steps_per_shortest_orbit <= 0:
         raise ValueError("steps_per_shortest_orbit must be positive")
     return _shortest_period(config) / float(steps_per_shortest_orbit)
 
 
-def recommended_output_every_n(
-    config: dict,
-    dt: float | None = None,
-    target_snapshots: int = 100000,
-) -> int:
-    """
-    Recommend a snapshot stride that produces approximately *target_snapshots*
-    total output snapshots over the full simulation.
-
-    For secular-evolution / habitability studies, orbital-phase resolution is
-    unnecessary — evenly spaced snapshots capture long-term trends well
-    while keeping file sizes manageable.
-    """
-    if target_snapshots <= 0:
-        raise ValueError("target_snapshots must be positive")
-    if dt is None:
-        dt = float(config['dt'])
-    dt = float(dt)
-    if not np.isfinite(dt) or dt <= 0.0:
-        raise ValueError(f"dt must be positive and finite, got {dt}")
-    t0 = float(config.get('t0', 0.0))
-    tf = float(config['tf'])
-    n_steps = int(np.ceil((tf - t0) / dt))
-    return max(1, int(np.floor(n_steps / target_snapshots)))
-
-
 def run_system(config: dict) -> str:
     """
     Run a single N-body simulation from a serializable config dict.
-    Designed to be called by Spark workers for parallel execution.
 
     Returns the path to the output HDF5 file.
 
@@ -183,7 +138,7 @@ def run_system(config: dict) -> str:
     stype = config['system_type']
     host = config['host_star']
 
-    # --- validate orbital elements ---
+    # ensure semimajor axis is defined for the stellar orbits, otherwise integration is not possible
     if not _has_valid_orbit(config, 'inner'):
         raise ValueError(
             f"System '{config.get('output_file', '?')}': inner binary orbit has no valid "
@@ -264,8 +219,7 @@ def run_system(config: dict) -> str:
     particles._vel -= v_com[None, :]
     particles._sync_objects()
 
-    # Set the orbital-element reference frame to the planet host star(s).
-    # This ensures aei() computes elements relative to the correct primary.
+    # setting the correct primary for planets
     particles.primary = planet_primary
 
     # --- create integrator, I/O, simulation ---
@@ -287,5 +241,15 @@ def run_system(config: dict) -> str:
         output_every_n=int(config.get('output_every_n', 5)),
         handle_collisions=bool(config.get('handle_collisions', False)),
     )
+
+    # Store stellar temperatures as file attribute for post-processing
+    star_temps = np.array([
+        particles.temperatures[i]
+        for i in range(particles.N)
+        if particles.ptypes[i] == 0
+    ])
+    with h5py.File(output_path, "a") as hf:
+        hf.attrs['star_temperatures'] = star_temps
+        hf.attrs['host_star'] = host
 
     return output_path

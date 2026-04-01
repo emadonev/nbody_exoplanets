@@ -10,8 +10,18 @@ class Particle(object):
     vel=np.zeroes(3): velocity vector (x, y, z)
     mass=0.0: mass of particle 
     radius=0.0: radius of particle
+    temperature=0.0: temperature of particle
     name=None: optional parameter, for plotting if one decides to name particle
-    primary=None:
+    index=None: the index of the particle
+    primary=None: the primary body of reference
+    hash=None: hash of the particle (unique number)
+    a=None: semi-major axis of particle
+    e=None: eccentricity of particle
+    inc=None: inclination of particle relative to our plane
+    Omega=None: longitude of the ascending node
+    omega=None: argument of the pericentre
+    theta=None: the current location of the particle on its orbit
+    angle_in_degrees=False: are the previous orbital elements in degrees or radians
 
     Methods:
     pos() - get the position
@@ -24,7 +34,6 @@ class Particle(object):
                  mass: float =0.0, 
                  radius: float =0.0, 
                  temperature: float =0.0,
-                 albedo=None,
                  name=None,
                  index=None,
                  primary=None,
@@ -51,7 +60,6 @@ class Particle(object):
         self.m = float(mass)
         self.r = float(radius)
         self.T = float(temperature)
-        self.albedo = albedo
         self.hash = int(hash) if hash is not None else int(np.random.randint(100000000, 999999999))
         self.name = name
         self.index = None if index is None else str(index)
@@ -97,28 +105,3 @@ class Particle(object):
         if vel_vec.shape != (3,):
             raise ValueError("vel must be shape (3,)")
         self._vel = vel_vec
-
-    # just in case - convenience values if we need a specific coordinate direciton for pos and vel
-    @property
-    def x(self) -> float:
-        return float(self._pos[0])
-
-    @property
-    def y(self) -> float:
-        return float(self._pos[1])
-
-    @property
-    def z(self) -> float:
-        return float(self._pos[2])
-
-    @property
-    def vx(self) -> float:
-        return float(self._vel[0])
-
-    @property
-    def vy(self) -> float:
-        return float(self._vel[1])
-
-    @property
-    def vz(self) -> float:
-        return float(self._vel[2])

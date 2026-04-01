@@ -5,25 +5,14 @@ from .particle import Particle
 
 class Particles(object):
     '''
-    Particles - a container of all the particles within the N body system we wish to integrate.
-    Contains a list of all the particles, as well as arrays of position, velocity, etc. of all the properties
-    in the shape (N, 3). Manages the updated particle positions, velocities, etc. as well as the structural hierarchy of the system
-    in the form of a binary tree.
+    Particles - a container of all the particles in the system
+    - contains arrays of all the properties of each particle separated by type (positions, velocities, etc.)
+    - has capabilities of extracting particles
+        - _get_body_index()
+        - get_by_label()
 
-    Methods:
-    - _get_body_index() - get the index of a particular particle within the _particles list
-    - _child_body_indices() - return all the leaf indices 
-    - _child_submass() - return the submass of the children nodes of the parent node
-    - _build_transform_row() - returns a row of the transformation matrix necessary for conversion between Cart and HJS coords
-    - postorder() - recursive method for getting a structured orbit_list to iterate over in the integrator; compiler method
-    - tree_build - builds a binary tree of individual 2-body orbits within the more complex hierarchical system and assigns values to the
-    parent nodes - submass, transform rows, etc.; compiler method
-    - resolve_primary_index() - method to resolve which body is the primary within a 2 body system or a multi body system with no hierarchy
-    - resolve_primary_state() - method to get the primary state information of the center of mass
-    - add_particle() - add a Particle object to the container
-    - remove_particle() - remove a Particle object from the container
-    - deactivate_particle() - in case of a collision, deactivate the body but don't remove it from the system
-    - _sync_objects() - after every integration step, update the particle's positions, velocities, etc. 
+    - resolving the primary body of the system
+    - adding and removing particles
     '''
     def __init__(self, G, system_type=None):
         self.g = float(G)
@@ -36,7 +25,6 @@ class Particles(object):
         self._temp = np.zeros((0,), dtype=np.float64)
         self._ptype = np.zeros((0,), dtype=np.int32)
         self._hash = np.zeros((0,), dtype=np.int64)
-        self._albedo = np.empty((0,), dtype=object)
 
         self._a = np.zeros((0,), dtype=np.float64)
         self._e = np.zeros((0,), dtype=np.float64)
@@ -50,37 +38,56 @@ class Particles(object):
         self.system = system_type  # can be 5 types: SA, SB, SC, SAB-P, P(ABC)
         self.primary = "#COM#"     # default reference frame: total centre of mass
 
+    # extracting the index of the particular body
     def _get_body_index(self, particle):
         return self._particles.index(particle)
 
+    # getting a specific body from the container given an index label (for stellar systems A, B, C)
     def get_by_label(self, label: str) -> tuple:
-        """Return (array_index, Particle) for a particle with the given index label (e.g. 'A', 'B', 'C')."""
-        key = str(label)
+        key = str(label) # get the label
+        # check if label in the container
         if key not in self._index_to_array:
             raise KeyError(f"No particle with index label '{label}'")
+        
+        # return the index at which this particle is located as well as the particle
         i = self._index_to_array[key]
         return i, self._particles[i]
         
+    def _com(self, idx):
+        """Centre of mass (mass, pos, vel) for a subset of body indices."""
+        idx = idx[self._mass[idx] > 0.0]
+        m = self._mass[idx]
+        mtot = float(m.sum())
+        com_pos = (m[:, None] * self._pos[idx]).sum(axis=0) / mtot
+        com_vel = (m[:, None] * self._vel[idx]).sum(axis=0) / mtot
+        return mtot, com_pos, com_vel
+
+    # resolving the primary body of the whole system/subsystem
     def resolve_primary_index(self, primary_spec=None):
+        # keep track of the active bodies
         active = self.active_indices
         if active.size == 0:
             raise ValueError("cannot resolve primary without existing active bodies")
 
+        # assign the default primary #COM# if no other is available
         if primary_spec is None:
             primary_spec = self.primary
 
+        # if the spec is a string, it can be one of 2 options
         if isinstance(primary_spec, str):
+            # center of mass
             if primary_spec == "#COM#":
                 stars = self.star_indices
                 if stars.size > 0:
                     return int(stars[0])
                 return int(active[np.argmax(self._mass[active])])
-            if primary_spec == "#MAX#":
-                return int(active[np.argmax(self._mass[active])])
+    
+            # returns the actual name of the particle in the final case
             if primary_spec not in self._name_to_index:
                 raise KeyError(f"No particles named {primary_spec}")
             return int(self._name_to_index[primary_spec])
-
+        
+        # if the spec is a number, it might be the index of the total list
         if isinstance(primary_spec, numbers.Integral):
             i = int(primary_spec)
             if not (0 <= i < self.N):
@@ -91,22 +98,18 @@ class Particles(object):
 
         raise TypeError(f"Unsupported primary spec type: {type(primary_spec)}")
 
+    # calculate the actual primary state
     def resolve_primary_state(self, primary_spec=None):
         if primary_spec is None:
             primary_spec = self.primary
 
+        # calculation of the center of mass
         if isinstance(primary_spec, str) and primary_spec == "#COM#":
             idx = self.active_indices
-            m = self._mass[idx]
-            pos = self._pos[idx]
-            vel = self._vel[idx]
-            mtot = float(m.sum())
-            com_pos = (m[:, None] * pos).sum(axis=0) / mtot
-            com_vel = (m[:, None] * vel).sum(axis=0) / mtot
-            return mtot, com_pos, com_vel
+            return self._com(idx)
 
+        # if the primary spec is actually a smaller subset of particles, calculate the COM of those
         if isinstance(primary_spec, (list, tuple, np.ndarray)):
-            # Support both integer indices and name strings
             resolved = []
             for item in primary_spec:
                 if isinstance(item, str):
@@ -114,23 +117,16 @@ class Particles(object):
                 else:
                     resolved.append(int(item))
             idx = np.asarray(resolved, dtype=int)
-            idx = idx[(0 <= idx) & (idx < self.N)]
-            idx = idx[self._mass[idx] > 0.0]
-            if idx.size == 0:
-                raise ValueError("primary subset has no active bodies")
-            m = self._mass[idx]
-            pos = self._pos[idx]
-            vel = self._vel[idx]
-            mtot = float(m.sum())
-            com_pos = (m[:, None] * pos).sum(axis=0) / mtot
-            com_vel = (m[:, None] * vel).sum(axis=0) / mtot
-            return mtot, com_pos, com_vel
+            return self._com(idx)
 
+        # if the primary body is literally just a body, then get its specifications
+        # because it IS the reference
         i = self.resolve_primary_index(primary_spec)
         return float(self._mass[i]), self._pos[i].copy(), self._vel[i].copy()
     
+    # =======
+    
     # properties of the particles container
-
     # number of particles
     @property
     def N(self) -> int: return int(self._pos.shape[0])
@@ -169,11 +165,6 @@ class Particles(object):
     @property
     def hashes(self) -> np.ndarray:
         return self._hash
-
-    # returning the albedos of particles
-    @property
-    def albedos(self) -> np.ndarray:
-        return self._albedo
 
     # returning the names of the particles
     @property
@@ -262,14 +253,13 @@ class Particles(object):
         pt = int(getattr(particle, 'ptype', 0))
         temp = float(getattr(particle, 'T', 0.0))
         h = int(getattr(particle, 'hash', np.random.randint(100000000, 999999999)))
-        alb = getattr(particle, 'albedo', None)
 
         if m <= 0:
             raise ValueError("mass must be > 0")
         if h in set(self._hash.tolist()):
             raise ValueError(f"Duplicate hash {h}")
 
-        # Optional orbital elements.
+        # orbital elements
         a = getattr(particle, "a", None)
         e = getattr(particle, "e", None)
         inc = getattr(particle, "inc", None)
@@ -277,42 +267,29 @@ class Particles(object):
         omega = getattr(particle, "omega", None)
         theta = getattr(particle, "theta", None)
         angles_in_degrees = bool(getattr(particle, "angles_in_degrees", False))
+
         orbital_values = [a, e, inc, Omega, omega, theta]
         has_orbital = all(v is not None for v in orbital_values)
         if any(v is not None for v in orbital_values) and not has_orbital:
             raise ValueError("a/e/inc/Omega/omega/theta must all be set for orbital conversion")
 
-        # Determine Cartesian state:
-        # 1) explicit pos/vel if provided by user
-        # 2) else derive from orbital elements relative to resolved primary
-        # 3) else default zeros (useful for first central star)
-        if getattr(particle, "_cartesian_input", False):
-            pos = np.asarray(particle.pos, dtype=np.float64).reshape(3)
-            vel = np.asarray(particle.vel, dtype=np.float64).reshape(3)
-        elif has_orbital:
+        # 1) the user has set orbital parameters that have to be converted into cartesian ones for integrator to work
+        if has_orbital:
+            # if this is the first body and the number of particles is still 0
             if self.N == 0:
                 if pt == 0:
-                    # First central body: no reference primary exists yet.
-                    # Keep the default origin state for the initial star.
+                    # no reference body thus far, just fill everything with zeros
                     pos = np.zeros(3, dtype=np.float64)
                     vel = np.zeros(3, dtype=np.float64)
                 else:
                     raise ValueError("cannot convert orbital elements without an existing primary body")
+            # this is the second, third, etc. body and needs a reference to derive position and velocity for cartesian coordinates
             else:
+                # get the primary body and its parameters
                 primary_spec = getattr(particle, "primary", None)
                 if isinstance(primary_spec, (list, tuple, np.ndarray)):
-                    # Primary is a subset of bodies — orbit their centre of mass.
-                    idx_list = []
-                    for p in primary_spec:
-                        if isinstance(p, str):
-                            if p not in self._name_to_index:
-                                raise KeyError(f"No particle named '{p}'")
-                            idx_list.append(self._name_to_index[p])
-                        else:
-                            idx_list.append(int(p))
-                    mp, primary_pos, primary_vel = self.resolve_primary_state(
-                        np.array(idx_list, dtype=int)
-                    )
+                    # if primary is a subset of bodies — orbit their centre of mass
+                    mp, primary_pos, primary_vel = self.resolve_primary_state(primary_spec)
                     mu = self.g * (mp + m)
                 else:
                     primary_idx = self.resolve_primary_index(primary_spec)
@@ -320,6 +297,8 @@ class Particles(object):
                     mu = self.g * (mp + m)
                     primary_pos = self._pos[primary_idx].copy()
                     primary_vel = self._vel[primary_idx].copy()
+
+                # calculate the relative velocity and position using orb_to_cartesian
                 r_rel, v_rel = tools.orb_to_cartesian(
                     a=a,
                     e=e,
@@ -330,19 +309,17 @@ class Particles(object):
                     mu=mu,
                     angles_in_degrees=angles_in_degrees,
                 )
+                
+                # get the actual pos and vel by adding the primary pos and vel
                 pos = primary_pos + r_rel
                 vel = primary_vel + v_rel
         else:
+            # body is the first one and it needs its standard position and velocity
+            # if it is not the first body it requires full orbital elements for conversion
             if pt != 0 and self.N > 0:
                 raise ValueError("non-star particles require either pos/vel or full orbital elements")
             pos = np.asarray(particle.pos, dtype=np.float64).reshape(3)
             vel = np.asarray(particle.vel, dtype=np.float64).reshape(3)
-
-        if not np.isfinite(pos).all() or not np.isfinite(vel).all():
-            raise ValueError("pos/vel must be finite")
-
-        if has_orbital and not np.isfinite(np.array([a, e, inc, Omega, omega, theta], dtype=float)).all():
-            raise ValueError("orbital elements must be finite")
 
         # Store orbital elements in radians internally when available.
         if has_orbital and angles_in_degrees:
@@ -361,10 +338,8 @@ class Particles(object):
             omega_store = np.nan
             theta_store = np.nan
 
+        # index of the new particle (before appending)
         idx = self.N
-        name = getattr(particle, "name", None)
-        if name is not None and name in self._name_to_index:
-            raise ValueError(f"Duplicate name {name}")
 
         # update the container properties by adding each component to its list
         self._pos = np.vstack([self._pos, pos[None, :]])
@@ -374,7 +349,6 @@ class Particles(object):
         self._temp = np.append(self._temp, temp)
         self._ptype = np.append(self._ptype, pt)
         self._hash = np.append(self._hash, h)
-        self._albedo = np.append(self._albedo, alb)
         self._a = np.append(self._a, float(a) if has_orbital else np.nan)
         self._e = np.append(self._e, float(e) if has_orbital else np.nan)
         self._i = np.append(self._i, inc_store)
@@ -382,21 +356,17 @@ class Particles(object):
         self._omega = np.append(self._omega, omega_store)
         self._theta = np.append(self._theta, theta_store)
         
-        # Keep object state consistent with container arrays at insertion time.
+        # setting the particles pos, vel and orbital parameters
         particle._pos = pos.copy()
         particle._vel = vel.copy()
-        particle.m = m
-        particle.r = r
-        particle.T = temp
-        particle.ptype = pt
-        particle.hash = h
-        particle.albedo = alb
         particle.a = float(a) if has_orbital else None
         particle.e = float(e) if has_orbital else None
         particle.inc = inc_store if np.isfinite(inc_store) else None
         particle.Omega = Omega_store if np.isfinite(Omega_store) else None
         particle.omega = omega_store if np.isfinite(omega_store) else None
         particle.theta = theta_store if np.isfinite(theta_store) else None
+
+        name = getattr(particle, "name", None)
 
         # adding the object itself
         self._particles.append(particle)
@@ -439,7 +409,6 @@ class Particles(object):
         self._temp = np.delete(self._temp, idx)
         self._ptype = np.delete(self._ptype, idx)
         self._hash = np.delete(self._hash, idx)
-        self._albedo = np.delete(self._albedo, idx)
         self._a = np.delete(self._a, idx)
         self._e = np.delete(self._e, idx)
         self._i = np.delete(self._i, idx)
@@ -497,7 +466,6 @@ class Particles(object):
             p.T = float(self._temp[i])
             p.ptype = int(self._ptype[i])
             p.hash = int(self._hash[i])
-            p.albedo = self._albedo[i]
             p.a = float(self._a[i]) if np.isfinite(self._a[i]) else None
             p.e = float(self._e[i]) if np.isfinite(self._e[i]) else None
             p.inc = float(self._i[i]) if np.isfinite(self._i[i]) else None

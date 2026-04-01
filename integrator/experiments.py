@@ -3,7 +3,6 @@ import re
 
 import numpy as np
 
-from .batch import recommended_dt, recommended_output_every_n
 from .physics import Physics
 
 
@@ -31,7 +30,6 @@ def _safe_float(value, default=0.0):
         pass
     return float(value)
 
-
 def _is_missing(value):
     if value is None:
         return True
@@ -40,17 +38,14 @@ def _is_missing(value):
     except (TypeError, ValueError):
         return False
 
-
 def _source_or_default(value, default):
     if _is_missing(value):
         return float(default)
     return float(value)
 
-
 def _slugify(text):
     text = str(text).strip().replace(" ", "_")
     return re.sub(r"[^A-Za-z0-9_.-]", "_", text)
-
 
 def _parse_pair_label(label):
     match = _PAIR_RE.match(str(label))
@@ -59,57 +54,12 @@ def _parse_pair_label(label):
     left, right = match.groups()
     return left, right
 
-
 def _expand_host_label(label):
     label = str(label).strip().replace(" ", "")
     parts = tuple(ch for ch in label if ch in _PHYSICAL_LABELS)
     if not parts:
         raise ValueError(f"Invalid host label {label!r}")
     return parts
-
-
-def canonical_star_mapping(inner_pair, outer_pair):
-    """
-    Map physical star labels to the integrator's canonical hierarchy.
-
-    The integrator expects:
-    - internal A-B to be the inner binary
-    - internal C to orbit COM(A,B)
-    """
-    inner_left, inner_right = _parse_pair_label(inner_pair)
-    outer_left, outer_right = _parse_pair_label(outer_pair)
-
-    inner_labels = tuple(inner_left + inner_right)
-    if len(inner_labels) != 2 or len(set(inner_labels)) != 2:
-        raise ValueError(f"Inner pair must contain exactly two distinct stars, got {inner_pair!r}")
-
-    remaining = tuple(lbl for lbl in _PHYSICAL_LABELS if lbl not in inner_labels)
-    if len(remaining) != 1:
-        raise ValueError(f"Could not determine outer singleton from {inner_pair!r}")
-    outer_singleton = remaining[0]
-
-    outer_labels = {outer_left, outer_right}
-    expected_outer = {outer_singleton, "".join(inner_labels)}
-    expected_outer_reversed = {outer_singleton, "".join(inner_labels[::-1])}
-    if outer_labels not in (expected_outer, expected_outer_reversed):
-        raise ValueError(
-            f"Outer pair {outer_pair!r} is inconsistent with inner pair {inner_pair!r}"
-        )
-
-    internal_to_physical = {
-        "A": inner_labels[0],
-        "B": inner_labels[1],
-        "C": outer_singleton,
-    }
-    physical_to_internal = {physical: internal for internal, physical in internal_to_physical.items()}
-    return internal_to_physical, physical_to_internal
-
-
-def canonical_host_label(host_label, physical_to_internal):
-    parts = _expand_host_label(host_label)
-    internal = tuple(sorted(physical_to_internal[p] for p in parts))
-    return "".join(internal)
-
 
 def system_type_from_host(host_label):
     host_label = str(host_label)
@@ -121,14 +71,12 @@ def system_type_from_host(host_label):
         return "P(ABC)"
     raise ValueError(f"Unsupported canonical host label {host_label!r}")
 
-
-def base_config_from_row(row, tf=1e4, output_dir="output"):
-    system_name = str(_value(row, "Sustav"))
+def base_config_from_row(row, tf=1e5, output_dir="output"):
+    system_name = str(_value(row, "Ime sustava"))
     inner_pair = _value(row, "Oznake unutarnjeg para")
     outer_pair = _value(row, "Oznake vanjskog para")
 
-    internal_to_physical, physical_to_internal = canonical_star_mapping(inner_pair, outer_pair)
-    host_star = canonical_host_label(_value(row, "Oznaka matične zvijezde"), physical_to_internal)
+    host_star = _value(row, "Oznaka matične zvijezde")
 
     config = {
         "system_name": system_name,
@@ -146,22 +94,20 @@ def base_config_from_row(row, tf=1e4, output_dir="output"):
         "source_has_outer_constraints": (
             not _is_missing(_value(row, "e_v")) or not _is_missing(_value(row, "i_v [º]"))
         ),
-        "internal_to_physical": dict(internal_to_physical),
-        "physical_to_internal": dict(physical_to_internal),
         "system_type": system_type_from_host(host_star),
         "host_star": host_star,
-        "mA": _value(row, f"Masa {internal_to_physical['A']} [m_s]"),
-        "mB": _value(row, f"Masa {internal_to_physical['B']} [m_s]"),
-        "mC": _value(row, f"Masa {internal_to_physical['C']} [m_s]"),
-        "RA": _value(row, f"Radijus {internal_to_physical['A']} [R_s]"),
-        "RB": _value(row, f"Radijus {internal_to_physical['B']} [R_s]"),
-        "RC": _value(row, f"Radijus {internal_to_physical['C']} [R_s]"),
-        "TA": _value(row, f"T_eff {internal_to_physical['A']} [K]"),
-        "TB": _value(row, f"T_eff {internal_to_physical['B']} [K]"),
-        "TC": _value(row, f"T_eff {internal_to_physical['C']} [K]"),
-        "nameA": _value(row, f"Ime zvijezde {internal_to_physical['A']}"),
-        "nameB": _value(row, f"Ime zvijezde {internal_to_physical['B']}"),
-        "nameC": _value(row, f"Ime zvijezde {internal_to_physical['C']}"),
+        "mA": _value(row, f"Masa A [m_s]"),
+        "mB": _value(row, f"Masa B [m_s]"),
+        "mC": _value(row, f"Masa C [m_s]"),
+        "RA": _value(row, f"Radijus A [R_s]"),
+        "RB": _value(row, f"Radijus B [R_s]"),
+        "RC": _value(row, f"Radijus C [R_s]"),
+        "TA": _value(row, f"T_eff A [K]"),
+        "TB": _value(row, f"T_eff B [K]"),
+        "TC": _value(row, f"T_eff C [K]"),
+        "nameA": _value(row, f"Ime zvijezde A"),
+        "nameB": _value(row, f"Ime zvijezde B"),
+        "nameC": _value(row, f"Ime zvijezde C"),
         "inner_a": _value(row, "a_u [AU]"),
         "inner_e": _safe_float(_value(row, "e_u")),
         "inner_i": _safe_float(_value(row, "i_u [º]")),
@@ -180,9 +126,8 @@ def base_config_from_row(row, tf=1e4, output_dir="output"):
     }
     return config
 
-
 def detected_planets_for_row(row, planets_df):
-    system_name = str(_value(row, "Sustav"))
+    system_name = str(_value(row, "Ime sustava"))
     subset = planets_df[planets_df["pl_name"].str.contains(system_name, na=False)]
 
     planets = []
@@ -200,14 +145,12 @@ def detected_planets_for_row(row, planets_df):
         })
     return planets
 
-
 def estimate_host_hz(config):
     physics = Physics()
     host_labels = tuple(str(config["host_star"]))
     radii = [config[f"R{label}"] for label in host_labels]
     temperatures = [config[f"T{label}"] for label in host_labels]
     return physics.static_habitable_zone(radii, temperatures)
-
 
 def synthetic_hz_planets(config, mass_earth=1.0, radius_earth=1.0):
     hz = estimate_host_hz(config)
@@ -234,13 +177,6 @@ def synthetic_hz_planets(config, mass_earth=1.0, radius_earth=1.0):
         "hz_outer": [build_planet("HZ outer", outer)],
     }
 
-
-def finalize_config(config):
-    config["dt"] = recommended_dt(config)
-    config["output_every_n"] = recommended_output_every_n(config, dt=config["dt"])
-    return config
-
-
 def _outer_sweep_values(base, outer_e_values, outer_i_values_deg, force_full_sweep=False):
     if force_full_sweep:
         return tuple(float(v) for v in outer_e_values), tuple(float(v) for v in outer_i_values_deg)
@@ -260,7 +196,7 @@ def _outer_sweep_values(base, outer_e_values, outer_i_values_deg, force_full_swe
     )
     return e_values, i_values
 
-
+# generate 
 def generate_habitability_experiments(
     triples_df,
     planets_df,
@@ -269,22 +205,9 @@ def generate_habitability_experiments(
     outer_i_values_deg=DEFAULT_OUTER_I_VALUES_DEG,
     inner_e=DEFAULT_INNER_E,
     inner_i_deg=DEFAULT_INNER_I_DEG,
-    tf=1e4,
+    tf=1e5,
     output_dir="output",
 ):
-    """
-    Build a sweep of canonicalized configs without editing the source CSV.
-
-    Assumptions:
-    - detected habitable systems keep observed planets and always run the full
-      outer e/i sweep
-    - synthetic-planet systems keep measured outer values when present and only
-      sweep the missing outer dimensions
-    - inner orbital elements keep source-table values when present and fall back
-      to the provided defaults when missing
-    - synthetic HZ planets are generated as one-planet scenarios at the inner
-      edge, midpoint, and outer edge of a static host HZ estimate
-    """
     configs = []
 
     for _, row in triples_df.iterrows():
@@ -328,7 +251,6 @@ def generate_habitability_experiments(
                         f"ev{outer_e:.1f}_iv{int(outer_i):03d}"
                     )
                     config["output_file"] = f"{output_dir}/{config['experiment_name']}.hdf5"
-                    finalize_config(config)
                     configs.append(config)
 
     return configs

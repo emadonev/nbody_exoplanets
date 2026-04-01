@@ -2,48 +2,22 @@ import numpy as np
 from . import constants
 
 class Physics(object):
-    # ---------
+    # ----------
     # energy
-    # ---------
-    def energy(self, particles)-> float:
-        # not all particles have to be active so
-        active = particles.active_indices
-        m = particles.masses
-        v = particles.vel
+    # ----------
 
-        ke = 0.5 * np.sum(m[active] * np.sum(v[active] ** 2, axis=1))
-
+    def energy(self, pos, vel, masses, G):
+        """Total energy (kinetic + potential) for an array of bodies."""
+        active = np.where(masses > 0)[0]
+        ke = 0.5 * np.sum(masses[active] * np.sum(vel[active] ** 2, axis=1))
         pe = 0.0
         for ii, i in enumerate(active):
-            for j in active[ii + 1 :]:
-                d = np.linalg.norm(particles.pos[i] - particles.pos[j])
-                if d == 0:
-                    continue
-                pe -= particles.g * particles.masses[i] * particles.masses[j] / d
-        return float(ke + pe)
-    
-    # -----------
-    # resolving primary object
-    # -----------
-    def center_of_mass(self, particles, subset=None):
-        # define the center of mass with position and velocity
-        if subset is None:
-            idx = particles.active_indices # use all active particles
-        else:
-            idx = np.asarray(subset, dtype=int)
-            idx = idx[particles.masses[idx] > 0.0] # take the ids of the subset of particles
-        
-        m = particles.masses[idx]
-        pos = particles.pos[idx]
-        vel = particles.vel[idx]
+            for j in active[ii + 1:]:
+                d = np.linalg.norm(pos[i] - pos[j])
+                if d > 0:
+                    pe -= G * masses[i] * masses[j] / d
+        return ke + pe
 
-        mtot = float(m.sum())
-
-        com_pos = (m[:, None] * pos).sum(axis=0) / mtot
-        com_vel = (m[:, None] * vel).sum(axis=0) / mtot
-
-        return mtot, com_pos, com_vel
-    
     # ----------
     # collisions
     # ----------
@@ -56,70 +30,39 @@ class Physics(object):
         # check if the distance is less than the sum of their radii - they definitely collided
         return d <= (particles.radii[i] + particles.radii[j])
     
-    def collision(self, particles, i:int, j:int)->bool:
-        #check if a collision occured - especially if i == j
-        if not self.check_collision(particles, i, j):
-            return False
-        
-        # more massive particle wins the collision
-        if particles.masses[i] >= particles.masses[j]:
-            keep, drop = i, j
-        else:
-            keep, drop = j, i
-
-        # define the properties of the 2 particles
-        m1, m2 = float(particles.masses[keep]), float(particles.masses[drop])
-        r1, r2 = float(particles.radii[keep]), float(particles.radii[drop])
-        p1 = particles.pos[keep].copy()
-        p2 = particles.pos[drop].copy()
-        v1 = particles.vel[keep].copy()
-        v2 = particles.vel[drop].copy()
-
-        m_new = m1 + m2 # mass of the new body is the sum of both masses
-        v_new = (m1*v1 + m2*v2) / m_new # conservation of linear momentum during collision
-        p_new = (m1*p1 + m2*p2) / m_new # new position of body is "center of mass" calculation of both bodies
-        r_new = (r1**3 + r2**3)**(1.0/3.0) # new radius
-
-        # update the arrays with this new particle
-        particles.pos[keep] = p_new
-        particles.vel[keep] = v_new
-        particles.masses[keep] = m_new
-        particles.radii[keep] = r_new
-
-        # deactivate the smaller particle to keep the arrays the same size
-        particles.deactivate_particle(drop)
-        return True # a collision happened
-    
     # ------------
     # temperature & habitable zone (Müller & Haghighipour 2014)
     # ------------
 
+    # Kopparapu et al. (2013) effective stellar flux at a HZ boundary
     def _s_eff(self, T_star, boundary='inner'):
-        """Kopparapu et al. (2013) effective stellar flux at a HZ boundary."""
+        # T_S definition
         T_s = T_star - 5780.0
+
+        # calculate for inner boundary
         if boundary == 'inner':
             S0 = constants.S_eff_sun_inner
             a, b, c, d = constants.a_inner, constants.b_inner, constants.c_inner, constants.d_inner
+        
+        # calculate for outer boundary
         else:
             S0 = constants.S_eff_sun_outer
             a, b, c, d = constants.a_outer, constants.b_outer, constants.c_outer, constants.d_outer
+        # return the polynomial
         return S0 + a*T_s + b*T_s**2 + c*T_s**3 + d*T_s**4
 
+    # Spectral weight W_i for a star at a given HZ boundary (Eq. 1, M&H 2014)
     def _spectral_weight(self, T_star, boundary='inner'):
-        """Spectral weight W_i for a star at a given HZ boundary (Eq. 1, M&H 2014)."""
         S0 = constants.S_eff_sun_inner if boundary == 'inner' else constants.S_eff_sun_outer
         return self._s_eff(T_star, boundary) / S0
 
+    # calculate the luminosity of each star based on its radius and temperature
     def stellar_luminosity_ratio(self, radius_solar, temperature_kelvin):
-        """
-        Return stellar luminosity in units of L_sun.
-
-        Parameters may be scalars or numpy-like arrays.
-        """
         radius_solar = np.asarray(radius_solar, dtype=float)
         temperature_kelvin = np.asarray(temperature_kelvin, dtype=float)
         radii_m = radius_solar * constants.R_sun
         luminosity_w = 4.0 * np.pi * radii_m**2 * constants.sb * temperature_kelvin**4
+
         return luminosity_w / constants.L_sun
 
     def static_habitable_zone(self, radius_solar, temperature_kelvin):
@@ -127,9 +70,8 @@ class Physics(object):
         Approximate a static habitable zone for a host star or co-located host stars.
 
         For multi-star hosts we collapse the host to a single effective source by
-        summing luminosities and using a luminosity-weighted temperature. This is
-        intended for seeding synthetic planets before integration, not as a full
-        dynamical HZ treatment.
+        summing luminosities and using a luminosity-weighted temperature. Only for the purpose of placing a synthetic
+        planet in orbit.
         """
         radii = np.atleast_1d(np.asarray(radius_solar, dtype=float))
         temps = np.atleast_1d(np.asarray(temperature_kelvin, dtype=float))
@@ -165,8 +107,6 @@ class Physics(object):
         if star_idx.size == 0 or planet_idx.size == 0:
             return particles.temperatures, {}
 
-        # Stellar radii are stored in solar radii, so convert to meters before
-        # applying the Stefan-Boltzmann law.
         L_ratio = np.atleast_1d(
             self.stellar_luminosity_ratio(
                 particles.radii[star_idx],
