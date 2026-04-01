@@ -117,7 +117,7 @@ def recommended_dt(config: dict, steps_per_shortest_orbit: int = 10) -> float:
 def recommended_output_every_n(
     config: dict,
     dt: float | None = None,
-    target_snapshots: int = 1000,
+    target_snapshots: int = 100000,
 ) -> int:
     """
     Recommend a snapshot stride that produces approximately *target_snapshots*
