@@ -106,7 +106,14 @@ class Particles(object):
             return mtot, com_pos, com_vel
 
         if isinstance(primary_spec, (list, tuple, np.ndarray)):
-            idx = np.asarray(primary_spec, dtype=int)
+            # Support both integer indices and name strings
+            resolved = []
+            for item in primary_spec:
+                if isinstance(item, str):
+                    resolved.append(self.resolve_primary_index(item))
+                else:
+                    resolved.append(int(item))
+            idx = np.asarray(resolved, dtype=int)
             idx = idx[(0 <= idx) & (idx < self.N)]
             idx = idx[self._mass[idx] > 0.0]
             if idx.size == 0:

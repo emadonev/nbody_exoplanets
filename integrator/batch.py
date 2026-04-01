@@ -264,6 +264,10 @@ def run_system(config: dict) -> str:
     particles._vel -= v_com[None, :]
     particles._sync_objects()
 
+    # Set the orbital-element reference frame to the planet host star(s).
+    # This ensures aei() computes elements relative to the correct primary.
+    particles.primary = planet_primary
+
     # --- create integrator, I/O, simulation ---
     integrator_cls = INTEGRATOR_MAP[stype]
     integrator = integrator_cls()
