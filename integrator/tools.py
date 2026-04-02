@@ -131,7 +131,7 @@ def stumpff_functions(z):
     return c0, c1, c2, c3, c4, c5
 
 @njit
-def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=80):
+def propagate_kepler_universal(r0_vec, v0_vec, dt, mu, tol=1e-12, max_iter=200):
     """
     Universal-variable Kepler drift (book-style Stumpff solve).
 
