@@ -108,20 +108,54 @@ def postprocess(h5_path: str, host_star: str = 'auto'):
                 for s in range(n_snap)
             ])
 
-            # --- Orbital elements (relative to host COM) ---
+            # --- Orbital elements for ALL bodies ---
+            # Each body's elements are computed relative to its natural primary:
+            #   - Star B (idx 1) relative to Star A (idx 0)  [inner binary]
+            #   - Star C (idx 2) relative to COM(A+B)         [outer orbit]
+            #   - Planets relative to their host COM           [from host_indices]
             a_arr = np.full((n_snap, n_particles), np.nan)
             e_arr = np.full((n_snap, n_particles), np.nan)
             inc_arr = np.full((n_snap, n_particles), np.nan)
 
-            if len(planet_idx) > 0:
-                for s in range(n_snap):
+            for s in range(n_snap):
+                # Inner binary: star B relative to star A
+                if len(star_idx) >= 2:
+                    iA, iB = star_idx[0], star_idx[1]
+                    mu_AB = mass_arr[s, iA]
+                    pos_rel = (pos[s, iB] - pos[s, iA]).reshape(1, 3)
+                    vel_rel = (vel[s, iB] - vel[s, iA]).reshape(1, 3)
+                    a_s, e_s, i_s = tools.aei(
+                        mp=mass_arr[s, iB:iB+1], Ms=mu_AB,
+                        pos=pos_rel, vel=vel_rel, G=G,
+                    )
+                    a_arr[s, iB] = a_s[0]
+                    e_arr[s, iB] = e_s[0]
+                    inc_arr[s, iB] = i_s[0]
+
+                # Outer orbit: star C relative to COM(A+B)
+                if len(star_idx) >= 3:
+                    iC = star_idx[2]
+                    mAB = mass_arr[s, iA] + mass_arr[s, iB]
+                    com_pos_AB = (mass_arr[s, iA] * pos[s, iA] + mass_arr[s, iB] * pos[s, iB]) / mAB
+                    com_vel_AB = (mass_arr[s, iA] * vel[s, iA] + mass_arr[s, iB] * vel[s, iB]) / mAB
+                    pos_rel = (pos[s, iC] - com_pos_AB).reshape(1, 3)
+                    vel_rel = (vel[s, iC] - com_vel_AB).reshape(1, 3)
+                    a_s, e_s, i_s = tools.aei(
+                        mp=mass_arr[s, iC:iC+1], Ms=mAB,
+                        pos=pos_rel, vel=vel_rel, G=G,
+                    )
+                    a_arr[s, iC] = a_s[0]
+                    e_arr[s, iC] = e_s[0]
+                    inc_arr[s, iC] = i_s[0]
+
+                # Planets relative to host COM
+                if len(planet_idx) > 0:
                     Ms, com_pos, com_vel = _primary_state(
                         pos[s], vel[s], mass_arr[s], host_indices,
                     )
                     pos_rel = pos[s, planet_idx] - com_pos[None, :]
                     vel_rel = vel[s, planet_idx] - com_vel[None, :]
                     mp = mass_arr[s, planet_idx]
-
                     a_s, e_s, i_s = tools.aei(
                         mp=mp, Ms=Ms, pos=pos_rel, vel=vel_rel, G=G,
                     )
