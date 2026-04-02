@@ -178,22 +178,19 @@ def synthetic_hz_planets(config, mass_earth=1.0, radius_earth=1.0):
     }
 
 def _outer_sweep_values(base, outer_e_values, outer_i_values_deg, force_full_sweep=False):
-    if force_full_sweep:
-        return tuple(float(v) for v in outer_e_values), tuple(float(v) for v in outer_i_values_deg)
-
     source_outer_e = base["source_outer_e"]
     source_outer_i = base["source_outer_i"]
 
-    e_values = (
-        tuple(float(v) for v in outer_e_values)
-        if _is_missing(source_outer_e)
-        else (float(source_outer_e),)
-    )
-    i_values = (
-        tuple(float(v) for v in outer_i_values_deg)
-        if _is_missing(source_outer_i)
-        else (float(source_outer_i),)
-    )
+    if not _is_missing(source_outer_e):
+        e_values = (float(source_outer_e),)
+    elif force_full_sweep or _is_missing(source_outer_e):
+        e_values = tuple(float(v) for v in outer_e_values)
+
+    if not _is_missing(source_outer_i):
+        i_values = (float(source_outer_i),)
+    elif force_full_sweep or _is_missing(source_outer_i):
+        i_values = tuple(float(v) for v in outer_i_values_deg)
+
     return e_values, i_values
 
 # generate 
