@@ -1,6 +1,7 @@
 import numpy as np
 from .data_io import DataIO
 from .physics import Physics
+from .WH_SC_P import _dkd_loop
 
 class Simulation(object):
     def __init__(self, particles, integrator, dataio: DataIO, physics: Physics):
@@ -10,52 +11,52 @@ class Simulation(object):
         self.dataio = dataio or DataIO(const_g=particles.g)
 
     def run(self, t0, tf, dt, output_every_n=1, handle_collisions=False):
-        # initialize the integrator
         self.integrator.bind(self.particles, t0, tf, dt)
-
-        # initialize buffer
         self.dataio.initialize_buffer(self.particles.N)
 
-        # total number of steps is fixed — independent of output_every_n
-        n_steps = int(np.ceil((float(tf) - float(t0)) / float(dt)))
+        t0 = float(t0)
+        dt = float(dt)
+        n_steps = int(np.ceil((float(tf) - t0) / dt))
+        output_every_n = int(output_every_n)
+        n_snaps = n_steps // output_every_n
 
         # store initial snapshot
-        self._store_snapshot(float(t0))
+        self._store_snapshot(t0)
 
-        # time loop driven by integer counter to avoid float accumulation
-        for step in range(1, n_steps + 1):
-            # perform step
-            self.integrator.propagate()
+        # allocate snapshot buffers for the JIT loop
+        N = self.particles.N
+        buf_t = np.empty(n_snaps, dtype=np.float64)
+        buf_pos = np.empty((n_snaps, N * 3), dtype=np.float64)
+        buf_vel = np.empty((n_snaps, N * 3), dtype=np.float64)
 
-            # synchronize objects
-            if hasattr(self.particles, '_sync_objects'):
-                self.particles._sync_objects()
+        try:
+            integ = self.integrator
 
-            # handle collisions
-            if handle_collisions:
-                if self._handle_collisions():
-                    break
+            # run the entire integration in compiled code
+            actual_snaps = _dkd_loop(
+                self.particles._pos, self.particles._vel,
+                integ.hjs_order, integ.M, integ.M_inv, integ._masses,
+                integ.GM_B, integ.GM_C, integ.GM_planets,
+                integ.G, integ.N_planets, dt,
+                n_steps, output_every_n,
+                buf_pos, buf_vel, buf_t, t0,
+            )
 
-            # compute time exactly from t0 to avoid drift
-            t = float(t0) + step * float(dt)
+            # flush all snapshots to HDF5
+            for s in range(actual_snaps):
+                self.dataio.store_state(
+                    t=buf_t[s],
+                    pos=buf_pos[s],
+                    vel=buf_vel[s],
+                    masses=self.particles.masses,
+                    radii=self.particles.radii,
+                    hashes=self.particles.hashes,
+                    ptypes=self.particles.ptypes,
+                )
+        finally:
+            self.dataio.close()
 
-            if step % int(output_every_n) == 0:
-                self._store_snapshot(t)
-
-        self.dataio.close()
         return self.dataio.output_name
-
-    def _handle_collisions(self):
-        active = self.particles.active_indices
-
-        for a_i, i in enumerate(active):
-            if self.particles.masses[i] <= 0: # if the mass is less than zero (deactivated)
-                continue
-            for j in active[a_i + 1 :]: # for every other particle to the end of the list
-                if self.particles.masses[j] <= 0: # if this particle is deactivated
-                    continue
-                if self.physics.check_collision(self.particles, int(i), int(j)): # if they are all active particles, perform collision mechanics
-                    return True
 
     def _store_snapshot(self, t):
         self.dataio.store_state(
@@ -67,4 +68,3 @@ class Simulation(object):
             hashes=self.particles.hashes,
             ptypes=self.particles.ptypes,
         )
-        return

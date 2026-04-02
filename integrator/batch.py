@@ -234,22 +234,24 @@ def run_system(config: dict) -> str:
 
     sim = Simulation(particles, integrator, dataio, Physics())
 
-    output_path = sim.run(
-        t0=config.get('t0', 0.0),
-        tf=config['tf'],
-        dt=dt,
-        output_every_n=int(config.get('output_every_n', 5)),
-        handle_collisions=bool(config.get('handle_collisions', False)),
-    )
-
-    # Store stellar temperatures as file attribute for post-processing
     star_temps = np.array([
         particles.temperatures[i]
         for i in range(particles.N)
         if particles.ptypes[i] == 0
     ])
-    with h5py.File(output_path, "a") as hf:
-        hf.attrs['star_temperatures'] = star_temps
-        hf.attrs['host_star'] = host
 
-    return output_path
+    try:
+        sim.run(
+            t0=config.get('t0', 0.0),
+            tf=config['tf'],
+            dt=dt,
+            output_every_n=int(config.get('output_every_n', 5)),
+            handle_collisions=bool(config.get('handle_collisions', False)),
+        )
+    finally:
+        # Always write metadata so post-processing can work on partial runs
+        with h5py.File(dataio.output_name, "a") as hf:
+            hf.attrs['star_temperatures'] = star_temps
+            hf.attrs['host_star'] = host
+
+    return dataio.output_name
