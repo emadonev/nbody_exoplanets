@@ -126,9 +126,15 @@ def base_config_from_row(row, tf=1e5, output_dir="output"):
     }
     return config
 
+_ALTERNATE_NAMES = {
+    "94 Ceti": ["94 Ceti", "HD 19994"],
+}
+
 def detected_planets_for_row(row, planets_df):
     system_name = str(_value(row, "Ime sustava"))
-    subset = planets_df[planets_df["pl_name"].str.contains(system_name, na=False)]
+    names_to_search = _ALTERNATE_NAMES.get(system_name, [system_name])
+    mask = planets_df["pl_name"].str.contains("|".join(names_to_search), na=False)
+    subset = planets_df[mask]
 
     planets = []
     for _, planet in subset.iterrows():
@@ -152,7 +158,7 @@ def estimate_host_hz(config):
     temperatures = [config[f"T{label}"] for label in host_labels]
     return physics.static_habitable_zone(radii, temperatures)
 
-def synthetic_hz_planets(config, mass_earth=1.0, radius_earth=1.0):
+def synthetic_hz_planets(config, real_planets=None, mass_earth=1.0, radius_earth=1.0):
     hz = estimate_host_hz(config)
     inner = hz["inner_radius"]
     outer = hz["outer_radius"]
@@ -170,11 +176,13 @@ def synthetic_hz_planets(config, mass_earth=1.0, radius_earth=1.0):
             "omega": 0.0,
             "theta": 0.0,
         }
+    
+    extra = list(real_planets) if real_planets else []
 
     return {
-        "hz_inner": [build_planet("HZ inner", inner)],
-        "hz_mid": [build_planet("HZ middle", middle)],
-        "hz_outer": [build_planet("HZ outer", outer)],
+        "hz_inner": [build_planet("HZ inner", inner)] + extra,
+        "hz_mid": [build_planet("HZ middle", middle)] + extra,
+        "hz_outer": [build_planet("HZ outer", outer)] + extra,
     }
 
 def _outer_sweep_values(base, outer_e_values, outer_i_values_deg, force_full_sweep=False):
@@ -220,7 +228,8 @@ def generate_habitability_experiments(
                 force_full_sweep=True,
             )
         else:
-            scenario_planets = synthetic_hz_planets(base)
+            real_planets = detected_planets_for_row(row, planets_df)
+            scenario_planets = synthetic_hz_planets(base, real_planets)
             outer_e_iter, outer_i_iter = _outer_sweep_values(
                 base,
                 outer_e_values,

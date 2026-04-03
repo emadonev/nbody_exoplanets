@@ -58,8 +58,8 @@ class Physics(object):
 
     # calculate the luminosity of each star based on its radius and temperature
     def stellar_luminosity_ratio(self, radius_solar, temperature_kelvin):
-        radius_solar = np.asarray(radius_solar, dtype=float)
-        temperature_kelvin = np.asarray(temperature_kelvin, dtype=float)
+        radius_solar = np.nan_to_num(np.asarray(radius_solar, dtype=float), nan=0.0)
+        temperature_kelvin = np.nan_to_num(np.asarray(temperature_kelvin, dtype=float), nan=0.0)
         radii_m = radius_solar * constants.R_sun
         luminosity_w = 4.0 * np.pi * radii_m**2 * constants.sb * temperature_kelvin**4
 
