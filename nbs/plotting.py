@@ -155,14 +155,13 @@ def plot_orbital_elements(path, star_smooth=1, planet_smooth=1000, save=None):
     plt.tight_layout()
 
     if save:
-        plt.savefig('../plots/'+save, dpi=300, bbox_inches='tight')
+        plt.savefig('../plots_orbit/'+save, dpi=300, bbox_inches='tight')
     #plt.show()
 
 def plot_temperature(path, planet_smooth=1000, save=None):
     t, pos, mass, ptype, hz_inner_radius, hz_outer_radius, energy, temperature, in_hz, a, e, inc, s_eff_inner, s_eff_outer = load_hdf5_data(path)
     star_idx, planet_idx, iA, iB, iC, mA, mB, r_com_bin = determine_system(mass, pos, ptype)
 
-    print(temperature)
     planet_colors = ['#001219', '#005f73', '#0a9396', '#94d2bd', '#e9d8a6', '#bb3e03', '#ae2012']
 
     scenario_mapping = {
@@ -200,7 +199,6 @@ def plot_temperature(path, planet_smooth=1000, save=None):
     plt.ticklabel_format(useOffset=False, style='plain')
     plt.xlabel('Vrijeme (godina)')
     plt.ylabel('T [K]')
-    plt.legend(fontsize=8)
     plt.grid(alpha=0.3)
 
     s_inner = float(s_eff_inner[0, planet_idx[0]])
@@ -211,9 +209,10 @@ def plot_temperature(path, planet_smooth=1000, save=None):
 
     plt.axhline(T_inner, ls='--', lw=2.0, color='#ae2012', label='Unutarnja HZ')
     plt.axhline(T_outer, ls='-.', lw=2.0, color='#ca6702', label='Vanjska HZ')
+    plt.legend(fontsize=8)
 
     plt.tight_layout()
 
     if save:
-        plt.savefig('../plots/' + save, dpi=300, bbox_inches='tight')
-    plt.show()
+        plt.savefig('../plots_temp/' + save, dpi=300, bbox_inches='tight')
+    #plt.show()

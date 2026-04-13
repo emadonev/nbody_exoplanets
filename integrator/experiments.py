@@ -10,7 +10,7 @@ DEFAULT_OUTER_E_VALUES = (0.0, 0.2, 0.4, 0.6, 0.8)
 DEFAULT_OUTER_I_VALUES_DEG = (0.0, 30.0, 60.0, 90.0)
 DEFAULT_INNER_E = 0.4
 DEFAULT_INNER_I_DEG = 0.0
-DETECTED_HABITABLE_SYSTEMS = frozenset({"Gliese 667", "LTT 1445"})
+DETECTED_HABITABLE_SYSTEMS = frozenset({"Gliese 667"})
 
 _PHYSICAL_LABELS = ("A", "B", "C")
 _PAIR_RE = re.compile(r"^\s*([ABC]+)\s*-\s*([ABC]+)\s*$")
