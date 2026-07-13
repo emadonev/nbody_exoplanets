@@ -1,0 +1,227 @@
+\documentclass[referee]{aa}
+
+\usepackage{graphicx}
+\usepackage{txfonts}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{lipsum}
+\usepackage{subcaption}         
+\usepackage{lscape}             
+\usepackage{placeins}           
+\usepackage{booktabs}
+
+\begin{document}
+
+    \title{Determining the long-term dynamical and temperature stability of potentially habitable planets in trinary star
+    systems GJ 667 and LTT 1445}
+
+
+   \titlerunning{Stability of exoplanets in hierarchical triple systems}
+    \authorrunning{Donev}
+    
+    \author{Ema Donev\inst{1}}
+
+    \institute{
+    University of Groningen, PO Box 72, 9700 AB Groningen, The Netherlands\\
+    \email{emadonev@icloud.com}
+    }
+    
+    \date{Received XXX; accepted XXX}
+    
+    \abstract
+      {}
+      {Investigate long-term dynamical and temperature stability on exoplanets of systems Gliese 667, LTT 1445, HD 132563, Kepler-444, and 94 Ceti.}
+      {Used a Wisdom-Holman integrator adapted for triple hierarchical star systems and temperature tracking. For systems without orbital parameters for stellar orbits, explored a range of eccentricities and inclinations.}
+      {2 out of 2 habitable exoplanets in Gliese 667 remain stable long term, 94 Ceti and Kepler 444 support the existence of synthetic exoplanets, while LTT 1445 is highly dynamically unstable and HD 132563 has very high temperature changes.}
+      {With this work long-term stability can be determined, but not necessarily habitability by only using the habitable zone and temperature estimates.}
+    
+    \keywords{ exoplanets -- N-body simulation -- habitability
+    }
+    
+    \maketitle
+
+    \section{Introduction} \label{sec:intro}
+    The search for potentially habitable planets has always been a core part of astrophysics. 
+    From the first exoplanet discovered in 1992 around pulsar PSR~B1257+12 \citep{WolszczanFrail1992} to today, 
+    more than 6000 exoplanets have been listed in the NASA Exoplanet Archive \citep{NASAExoplanetArchiveCounts2026}.
+    A non-negligible fraction of known exoplanets orbit stars that are members of binary or higher-order multiple systems,
+    although the inferred fraction depends on the sample and observational methods \citep[e.g.][]{Roell2012, 
+    MichelMugrauer2021,Schlagenhauf2024, Raghavad2006}. Due to the complex orbital architecture of multiple star systems
+    and their exoplanets, analyzing the dynamical stability of such systems is crucial for long-term habitability. The presence of 
+    other stellar companions can be the driver of the Kozai-Lidov mechanism \citep[][]{Kozai1962, Lidov1962}, influencing the temperature and climate
+    of a potentially habitable exoplanet. Stable zones in binary systems have been widely studied, with boundaries of stable zones
+    empirically defined for all types of planetary orbits \citep{HolmanWiegert1999}. Related work studied habitable zones of 
+    binary systems \citep[e.g.][]{HaghighipourKaltenegger2013, KalteneggerHaghighipour2013, EgglGeorgakarakos2020}. For triple hierarchical systems most
+    body of work focuses on dynamical stability \citep[][]{VerrierEvans2007,Busetti2018}, with more recent work exploring habitable zones in such systems
+    \citep[e.g.][]{Muller2014}. 
+    Even though there are only 73 triple star systems listed in the NASA Exoplanet archive \citep{NASAExoplanetArchiveCounts2026}
+    , they offer a wide range of planetary configurations and potential habitable exoplanets. 2 very interesting
+    and close cases, within 24 light years, are systems Gliese 667 and LTT 1445. Gliese 667 C hosts 2 Super-Earths, with GJ 667 Cc being in the habitable zone and an exciting
+    candidate for habitability
+    \citep[]{AngladaEscudéGJ667, DelfosseHARPS}, although there has been significant debate over the total number of planets. 
+    \citep{Anglada2013multipleplanets} claimed there are 6, or even 7 planets in the system with 3 of them being in the habitable zone, while later
+    research \citep[][]{FerozHobsonBayesian2014, Robertson2014} argues that only GJ 667 Cb and GJ 667 Cc are confirmed, with the other planets being artifacts
+    on the RV periodograms. While GJ 667 Cc appears to be a prime target for habitability, its closeness to its host M dwarf causes multiple issues affecting habitability, such as
+    rising temperatures due to spin-down time \citep{MarakovGJ667C} and flares of UV and X-rays which can harm any potential life if the planet has no magnetic field \citep{SloaneGJ667cXray}.
+    LTT 1445 A hosts 2 planets as well, LTT 1445 Ab and LTT 1445 Ac with a possible third candidate, LTT 1445 Ad. \citep[][]{Winters_2019, Winters_2022}
+    Planets LTT 1445 Ac and Ad have potential to be habitable, as LTT 1445 Ac has a similar radius and density as the Earth \citep{Pass_2023}, making it an exciting candidate for further studies,
+    as well as LTT 1445 Ad which is in the habitable zone. However, LTT 1445 Ab is also an interesting candidate for further investigation of its atmosphere, as \citep{Bennett_2025} found traces of HCN and a $~2\sigma$ certainty
+    of an atmosphere. The rocky planets in this system also face similar issues as in GJ 667, with X rays from the host star LTT 1445 A having the potential to harm
+    water retention, although planet LTT 1445 Ad could still keep its water supply if it contains one. %\citep{keylist}.
+    In this work the goal is to investigate the long-term dynamical stability of planets GJ 667 Cb and Cc, and LTT 1445 Ab, Ac and Ad, determine the influence of the trinary system on the dynamics of the planets
+    and the effective temperature, as well as track how the temperature changes as the planets progress in their dynamical evolution using N-body integrators. The data used is presented in
+    \hyperref[sec:data]{Sect. 2}, the methodology of an adapted N-body integrator in \hyperref[sec:method]{Sect. 3}, the results and discussion in \hyperref[sec:result]{Sect. 4} and \hyperref[sec:discuss]{Sect. 5},
+    and finally the conclusions of this work in \hyperref[sec:conclusion]{Sect. 6}.
+
+    \section{Data}\label{sec:data}
+
+    As this work explores both dynamical and temperature stability, orbital and photometric data
+    is required of all the stellar and planetary components. Tables \ref{tab:stellar}, \ref{tab:orbits} and \ref{tab:planets} contain
+    all the data used in this work. While system LTT 1445 is described in great detail, system GJ 667 lacks precise information on the masses
+    of stellar components A and B as well as their orbit. As such, their orbit can be approximated as a single body according to \citet{Desgrange2023}, effectively acting as a binary system.
+    The outer orbit in GJ 667 is not precisely defined either, as only the separation between binary pair AB and star C is known. For this system a study of the parameter space
+    will be done, testing a range of values for eccentricity, mutual 
+    
+    ...
+    - explain data design
+
+    - explain the chosen ranges of eccentricity and inclination
+
+    - determine values of Omega, omega and T0 for the outer system as well as for the planets
+
+    - explain that we cannot know the mutual inclination of the planets, but that we assume coplanarity
+
+
+\begin{table*}[t]
+        \centering
+        \small
+        \caption{Stellar properties of the trinary sytems GJ 667 and LTT 1445.}
+        \label{tab:stellar}
+        \begin{tabular}{lccccccccc}
+                \toprule
+                \textbf{Star} &
+                \multicolumn{4}{c}{\textbf{LTT 1445}} &
+                \multicolumn{4}{c}{\textbf{GJ 667}} \\
+                \cmidrule(lr){2-5}
+                \cmidrule(lr){6-9} 
+                & $M (M_{\odot})$ & $R (R_{\odot})$ & $T (K)$ & $L_{bol}(L_{\odot})$ &
+                $M (M_{\odot})$ & $R (R_{\odot})$ & $T (K)$ & $ L_{bol} (L_{\odot})$ \\
+                \midrule
+                A & $0.257 \pm 0.014$ & $0.268 \pm 0.027$ & $3337 \pm 150$ & $0.00794^{(D)}$ & - & $0.76$ & $4270$ & $0.173^{(D)}$ \\
+                B  & $0.215 \pm 0.014$ & $0.236 \pm 0.027$ & - & $0.00596^{(D)}$ & - & $0.70$ &  $3998$ & $0.113^{(D)}$ \\
+                C  & $0.161 \pm 0.014$ & $0.197 \pm 0.027$ & - & $0.00368^{(D)}$ & $0.327 \pm 0.008$ & $0.337 \pm 0.014$  &  ${3443^{+75}_{-71}}$ & $0.01439 \pm 0.00034$\\
+                \bottomrule
+        \end{tabular}
+        \tablefoot{$(D)$ denotes a value calculated or unit-converted. The luminosities of LTT 1445 A,B and C from \citep{Rukdee2024} are converted in terms of the Sun's luminosity according to \citep{Prsa2016}. 
+        The masses, radii and temperatures of LTT 1445 stellar components are adopted from \citet{Winters_2019, Rukdee2024}. The masses of components A and B in the GJ 667 system
+        currently have no explicit values, however according to \citet{Desgrange2023} the AB pair has a combined mass of $1.27 M_{\odot}$ and can be treated
+        as a single object for N-body integration. Luminosities of stars GJ 667 A and B are adopted Stefan-Boltzmann values, $L/L_{\odot} = (R/R_{\odot})^2 (T_{eff}/5772 K)^4$, calculated from older component-resolved radii and temperatures 
+        \citet{JohnsonWright1983}. The properties of the host, GJ 667 C are adopted from \citet{Pineda2021}.}
+
+    \end{table*}
+
+
+    \begin{table*}[t]
+        \centering
+        \small
+        \caption{Orbital properties of the trinary sytems GJ 667 and LTT 1445.}
+        \label{tab:orbits}
+        \begin{tabular}{lccccc}
+                \toprule
+                \textbf{} &
+                \multicolumn{2}{c}{\textbf{LTT 1445}} &
+                \multicolumn{1}{c}{\textbf{GJ 667}} \\
+                \cmidrule(lr){2-3}
+                \cmidrule(lr){4-4} 
+                & $B - C$ & $A - (B - C)$ &
+                $C - (A - B)$ & \\
+                \midrule
+                $P \; (yr)$ & $36.2 \pm 5.3$ & ${549^{+243}_{136}}$  & -\\
+                $\alpha \; (\arcsec)$  & $1.159 \pm 0.076$ & - & $32.4$ \\
+                $a \; (au)$  & $8.1 \pm 0.5$ & ${58^{+16}_{-10}}$ & $~235$ \\
+                $e $  & $0.50 \pm 0.11$ & ${0.375^{+0.084}_{-0.037}}$ &  $[0.0, 0.2, 0.4, 0.6, 0.8]^{(S)}$\\
+                $i_{sky} \; (\deg)$  & $89.64 \pm 0.13$ & ${88.5^{+1.3}_{-1.4}}$ & $[0.0, 30.0, 60.0, 90.0]^{(S)}$ \\
+                $i_{mut} \; (\deg)$  & - & $2.88 \pm 0.63$ & - \\
+                $\Omega \; (\deg) $  & $137.63 \pm 0.19$ & $135.15 \pm 0.28$ & - \\
+                $\omega \; (\deg) $  & $209 \pm 13$ & ${256^{+28}_{-21}}$ & - \\
+                $T_0 \; (yr) $  & $2019.2 \pm 1.7$ & - & - \\
+                $\lambda_{ref} (deg)$  & - & $210.3 \pm 2.1$ & - \\
+                \bottomrule
+        \end{tabular}
+        \tablefoot{Orbital data for the binary pair A-B in LTT 1445 was adopted from \citet{Winters_2019}, while the data for the outer pair
+        is adopted from \citet{DYnamicalZhangLTT1445}. The orbital parameters listed for the outer orbit of LTT 1445 in the table are the posterior median values,
+        but in the evolutions of planetary systems the best-fit values will be used. Since there is no precise estimate of the separate masses of components A and B in GJ 667,
+        their orbit is irrelevant as they will be approximated as a single body. The orbit of component C around the merged binary AB doesn't have a fully defined orbit \citep{Desgrange2023},
+        so a range of values for eccentricity and inclination will be included as testing the parameter space for possible stable orbits of this system, denoted by $(S)$.}
+
+    \end{table*}
+
+    \begin{table*}[t]
+        \centering
+        \small
+        \caption{Properties of exoplanets in trinary sytems GJ 667 and LTT 1445.}
+        \label{tab:planets}
+        \begin{tabular}{lcccccc}
+                \toprule
+                \textbf{} &
+                \multicolumn{3}{c}{\textbf{LTT 1445}} &
+                \multicolumn{2}{c}{\textbf{GJ 667}} \\
+                \cmidrule(lr){2-4}
+                \cmidrule(lr){5-6} 
+                & b & c & d &
+                b & c & \\
+                \midrule
+                $M (M_\oplus)$ & $2.32 \pm 0.25$ & $1.00 \pm 0.19$ & $2.72 \pm 0.75$ & $5.6 \pm 0.3$ & $4.1 \pm 0.6$ &\\
+                $R (R_\oplus)$  & $1.43 \pm 0.09$ & ${1.07^{+0.10}_{-0.07}}$ & - & - & - &\\
+                $a \; (au)$  & $0.03807$ & $0.02656$ & $0.09$ & $0.050431 \pm 0.000004$ & $0.12501 \pm 0.00009$ &\\
+                $e $  & ${0.18^{+0.07}_{-0.06}}$ & ${0.05^{+0.05}_{-0.03}}$ &  ${0.26^{+0.14}_{-0.13}}$& $0.15 \pm 0.05$ & $0.27 \pm 0.1$ &\\
+                $i_{sky} \; (\deg)$  & $88.95^{+0.64}_{-0.57}$ & ${86.5^{+0.39}_{-0.47}}$ & - & - & - &\\
+                $i_{mut} \; (\deg)$  & - & - & - & - & - &\\
+                $\Omega \; (\deg) $  & - & - & - & - & - & \\
+                $\omega \; (\deg) $  & ${243.5^{+14.9}_{-17.8}}^{(D)}$ & ${162.7^{+10.3}_{-108.3}}^{(D)}$ & ${50.4^{+49.8}_{-33.8}}^{(D)}$ & $12 \pm 20$ & $140 \pm 20$ &\\
+                $T_0 \;$(BJD)  & ${2458423.426378^{+0.000299}_{-0.000304}}$ & ${2457005.358765 \pm 0.000003}$ & ${2457000.04618^{+0.00085}_{-0.00086}}$ & $2454446.1 \pm 0.3$ & $2454462 \pm 2$ & \\
+                \bottomrule
+        \end{tabular}
+        \tablefoot{Orbital information and the parameters of planets b, c and d are adapted from \citet{Lavie2023}, with the radius
+        of planet c from \citet{Pass_2023} due to higher precision. The values of orbital parameters are taken as eccentric posteriors from \citet{Lavie2023}, as 
+        eccentricity is a key component in habitability. For GJ 667 the values are adopted from \citet{Robertson2014}. }
+
+    \end{table*}
+
+    \section{Methodology}\label{sec:method}
+
+    - exploring dynamical and temperature stability
+
+    - guideline for LTT 1445 is Verier et all 2007 and the main architecture
+
+    - for GJ 667 due to the outer component being a single object, use binary code system and main source
+
+    - link code and github
+
+    - reference and explanation for temperature calculation
+
+    - explain methodology of code and the testing for every system
+    
+    \section{Results}\label{sec:result}
+    
+    \section{Discussion}\label{sec:discuss}
+    
+    \section{Conclusions}\label{sec:conclusion}
+    
+    \begin{acknowledgements}
+    Write funding, telescope/archive acknowledgements, software acknowledgements, and thanks here.
+    This research has made use of the NASA Exoplanet Archive, which is operated
+    by the California Institute of Technology, under contract with the National
+    Aeronautics and Space Administration under the Exoplanet Exploration Program.
+    \end{acknowledgements}
+    
+    \bibliographystyle{aa}
+    \bibliography{reference}
+    
+    \begin{appendix}
+    \section{Additional material}
+    Appendix text here.
+    \end{appendix}
+    
+\end{document}
