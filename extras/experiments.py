@@ -3,7 +3,7 @@ import re
 
 import numpy as np
 
-from .physics import Physics
+from ..integrator.physics import Physics
 
 
 DEFAULT_OUTER_E_VALUES = (0.0, 0.2, 0.4, 0.6, 0.8)

@@ -1,0 +1,3 @@
+run_id,system,set,n_planets,tspan_yr,config_file
+LTT1445__two_planet,LTT1445,two_planet,2,10000000.0,configs/LTT1445__two_planet.json
+LTT1445__three_planet,LTT1445,three_planet,3,10000000.0,configs/LTT1445__three_planet.json

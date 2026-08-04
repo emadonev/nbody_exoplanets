@@ -6,7 +6,8 @@ class Physics(object):
     # energy
     # ----------
 
-    def energy(self, pos, vel, masses, G):
+    @staticmethod
+    def energy(pos, vel, masses, G):
         """Total energy (kinetic + potential) for an array of bodies."""
         active = np.where(masses > 0)[0]
         ke = 0.5 * np.sum(masses[active] * np.sum(vel[active] ** 2, axis=1))

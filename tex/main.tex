@@ -10,6 +10,7 @@
 \usepackage{lscape}             
 \usepackage{placeins}           
 \usepackage{booktabs}
+\usepackage{amsmath}
 
 \begin{document}
 
@@ -76,22 +77,29 @@
 
     \section{Data}\label{sec:data}
 
-    As this work explores both dynamical and temperature stability, orbital and photometric data
-    is required of all the stellar and planetary components. Tables \ref{tab:stellar}, \ref{tab:orbits} and \ref{tab:planets} contain
-    all the data used in this work. While system LTT 1445 is described in great detail, system GJ 667 lacks precise information on the masses
-    of stellar components A and B as well as their orbit. As such, their orbit can be approximated as a single body according to \citet{Desgrange2023}, effectively acting as a binary system.
-    The outer orbit in GJ 667 is not precisely defined either, as only the separation between binary pair AB and star C is known. For this system a study of the parameter space
-    will be done, testing a range of values for eccentricity, mutual 
-    
-    ...
-    - explain data design
-
-    - explain the chosen ranges of eccentricity and inclination
-
-    - determine values of Omega, omega and T0 for the outer system as well as for the planets
-
-    - explain that we cannot know the mutual inclination of the planets, but that we assume coplanarity
-
+    To investigate the long-term dynamical and temperature stability of potentially habitable exoplanets, orbital and photometric data from all stellar and planetary components
+    is required. Tables \ref{tab:stellar}, \ref{tab:orbits} and \ref{tab:planets} contain
+    all the data used in this work. The luminosities of the stellar components will be used to calculate the effective surface temperature
+    on the exoplanets, further explained in section \ref{sec:temp}. To ensure all the orbital data is in the same reference plane and the planets start at the correct phase, 
+    a conversion is introduced from various $T_0$ to the true anomaly or $\theta$. In the binary system B-C in LTT 1445, $T_0$ in Besselian years is converted to
+    the true anomaly by calculating the mean anomaly and using a universal Kepler solver to calculate the value of $\theta$. A similar procedure is done for the outer orbit in LTT 1445,
+    however the mean anomaly is $M = \lambda_{ref} - \omega$. The planets in LTT 1445 have a time of conjunction, so a conversion to the time of periastron is needed first, and then
+    the procedure follows the previous examples. The following expressions were used for this conversion:
+    \begin{equation}
+        \theta_{conj} = \frac{\pi}{2} - \omega \\
+        E_{conj} = 2\arctan[\sqrt{\frac{1-e}{1+e}} \cdot \tan(\theta_{conj}/2)] \\
+        M_{conj} = E_{conj} - e\sin E_{conj} \\
+        T_0 = T - \frac{P}{2\pi} \cdot M_{conj}
+    \end{equation}
+    Finally, for the LTT 1445 planets, $\Omega$ will be set to 0, while the inclunation for planet d (as it is non-transiting) will be set to the same inclination
+    as the other two planets under the assumption of coplanarity at the angle of $89^\circ$. The N-body code will be fed data from the sky-view, as precise orbits of all the planets and stellar
+    components are available and measured as sky inclinations.
+    Since the stellar components of GJ 667 are poorly constrained, the binary pair AB will be merged into a single object and the orbit of C - (A-B) will be investigated through
+    a study of the parameter space. Noted with $(S)$ in Table \ref{tab:orbits}, the range of values
+    for eccentricity is \{$0.0, 0.2, 0.4, 0.6, 0.8$\} and for mutual inclination \{$0^\circ, 30^\circ, 60^\circ, 90^\circ$\} (with this selection, two values are below the critical
+    Kozai-Lidov angle of $39.2^\circ$, and two above it). The values of the remaining orbital elements are $\Omega = 0^\circ$, $\omega = 0^\circ$ and $\theta_0 = 90^\circ$.
+    As the confirmed GJ 667 planets are non-transiting, coplanarity is assumed with a mutual inclination of 0 and $\Omega = 0$. Mutual inclination is used in this system as there is no
+    measured sky inclination quantity so the coordinate system is built on mutual inclinations of orbits AB around C and the planets' orbits.
 
 \begin{table*}[t]
         \centering
@@ -137,16 +145,16 @@
                 & $B - C$ & $A - (B - C)$ &
                 $C - (A - B)$ & \\
                 \midrule
-                $P \; (yr)$ & $36.2 \pm 5.3$ & ${549^{+243}_{136}}$  & -\\
+                $P \; $ (yr)& $36.2 \pm 5.3$ & ${549^{+243}_{136}}$  & -\\
                 $\alpha \; (\arcsec)$  & $1.159 \pm 0.076$ & - & $32.4$ \\
-                $a \; (au)$  & $8.1 \pm 0.5$ & ${58^{+16}_{-10}}$ & $~235$ \\
+                $a \; $ (au) & $8.1 \pm 0.5$ & ${58^{+16}_{-10}}$ & $~235$ \\
                 $e $  & $0.50 \pm 0.11$ & ${0.375^{+0.084}_{-0.037}}$ &  $[0.0, 0.2, 0.4, 0.6, 0.8]^{(S)}$\\
-                $i_{sky} \; (\deg)$  & $89.64 \pm 0.13$ & ${88.5^{+1.3}_{-1.4}}$ & $[0.0, 30.0, 60.0, 90.0]^{(S)}$ \\
-                $i_{mut} \; (\deg)$  & - & $2.88 \pm 0.63$ & - \\
+                $i_{sky} \; (\deg)$  & $89.64 \pm 0.13$ & ${88.5^{+1.3}_{-1.4}}$ & - \\
+                $i_{mut} \; (\deg)$  & - & $2.88 \pm 0.63$ & $[0.0, 30.0, 60.0, 90.0]^{(S)}$ \\
                 $\Omega \; (\deg) $  & $137.63 \pm 0.19$ & $135.15 \pm 0.28$ & - \\
                 $\omega \; (\deg) $  & $209 \pm 13$ & ${256^{+28}_{-21}}$ & - \\
-                $T_0 \; (yr) $  & $2019.2 \pm 1.7$ & - & - \\
-                $\lambda_{ref} (deg)$  & - & $210.3 \pm 2.1$ & - \\
+                $T_0 \; $ (Besselian yr)  & $2019.2 \pm 1.7$ & - & - \\
+                $\lambda_{ref} (\deg)$  & - & $210.3 \pm 2.1$ & - \\
                 \bottomrule
         \end{tabular}
         \tablefoot{Orbital data for the binary pair A-B in LTT 1445 was adopted from \citet{Winters_2019}, while the data for the outer pair
@@ -172,7 +180,8 @@
                 & b & c & d &
                 b & c & \\
                 \midrule
-                $M (M_\oplus)$ & $2.32 \pm 0.25$ & $1.00 \pm 0.19$ & $2.72 \pm 0.75$ & $5.6 \pm 0.3$ & $4.1 \pm 0.6$ &\\
+                $M (M_\oplus)$ & $2.32 \pm 0.25$ & $1.00 \pm 0.19$ & - & - & - &\\
+                $M \sin i (M_\oplus)$ & - & - & $2.72 \pm 0.75$ & $5.6 \pm 0.3$ & $4.1 \pm 0.6$ &\\
                 $R (R_\oplus)$  & $1.43 \pm 0.09$ & ${1.07^{+0.10}_{-0.07}}$ & - & - & - &\\
                 $a \; (au)$  & $0.03807$ & $0.02656$ & $0.09$ & $0.050431 \pm 0.000004$ & $0.12501 \pm 0.00009$ &\\
                 $e $  & ${0.18^{+0.07}_{-0.06}}$ & ${0.05^{+0.05}_{-0.03}}$ &  ${0.26^{+0.14}_{-0.13}}$& $0.15 \pm 0.05$ & $0.27 \pm 0.1$ &\\
@@ -199,6 +208,7 @@
 
     - link code and github
 
+    \subsection{Temperature calculation and climate models}\label{sec:temp}
     - reference and explanation for temperature calculation
 
     - explain methodology of code and the testing for every system

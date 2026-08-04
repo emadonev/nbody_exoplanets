@@ -1,0 +1,80 @@
+{
+  "run_id": "LTT1445__two_planet",
+  "system": "LTT1445",
+  "set": "two_planet",
+  "reference_frame": "sky",
+  "t_ref_bjd": 2458423.426378,
+  "integration": {
+    "tspan_yr": 10000000.0,
+    "out_cadence_yr": 100
+  },
+  "active_planets": [
+    "b",
+    "c"
+  ],
+  "bodies": {
+    "C": {
+      "role": "inner_primary",
+      "mass_msun": 0.161
+    },
+    "B": {
+      "role": "inner_secondary",
+      "mass_msun": 0.215,
+      "orbit": {
+        "primary": "C",
+        "a_au": 8.1,
+        "e": 0.5,
+        "inc_rad": 1.564513141487717,
+        "Omega_rad": 2.4020966495197955,
+        "omega_rad": 3.6477381366681487,
+        "theta0_rad": -0.2109657910584333,
+        "period_yr": 37.59530442613302
+      }
+    },
+    "A": {
+      "role": "host",
+      "mass_msun": 0.257,
+      "orbit": {
+        "primary": [
+          "B",
+          "C"
+        ],
+        "a_au": 63.45,
+        "e": 0.4,
+        "inc_rad": 1.5502014416213634,
+        "Omega_rad": 2.357939819444339,
+        "omega_rad": 4.320038964536365,
+        "theta0_rad": -1.3463768374077063,
+        "period_yr": 635.251332412419
+      }
+    },
+    "b": {
+      "role": "planet",
+      "mass_msun": 6.968096928631069e-06,
+      "orbit": {
+        "primary": "A",
+        "a_au": 0.038103478488410274,
+        "e": 0.18,
+        "inc_rad": 1.5524703696489561,
+        "Omega_rad": 0.0,
+        "omega_rad": 4.25,
+        "theta0_rad": -2.6792036732890936,
+        "period_yr": 0.014671498973305955
+      }
+    },
+    "c": {
+      "role": "planet",
+      "mass_msun": 3.0034900554444265e-06,
+      "orbit": {
+        "primary": "A",
+        "a_au": 0.026589927094654586,
+        "e": 0.05,
+        "inc_rad": 1.509709802975095,
+        "Omega_rad": 0.0,
+        "omega_rad": 2.84,
+        "theta0_rad": 1.8823143443097938,
+        "period_yr": 0.008552766598220397
+      }
+    }
+  }
+}

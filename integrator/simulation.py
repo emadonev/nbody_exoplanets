@@ -1,7 +1,8 @@
 import numpy as np
 from .data_io import DataIO
 from .physics import Physics
-from .WH_SC_P import _dkd_loop
+from .WH_SC_P import _dkd_loop, WisdomHolman_SC_P
+from .WH_SC_P2 import _dkd_loop2, WisdomHolman_SC_P2
 
 class Simulation(object):
     def __init__(self, particles, integrator, dataio: DataIO, physics: Physics):
@@ -39,14 +40,25 @@ class Simulation(object):
                 remaining = n_steps - steps_done
                 chunk_steps = min(remaining, chunk_snaps * output_every_n)
 
-                actual_snaps = _dkd_loop(
-                    self.particles._pos, self.particles._vel,
-                    integ.hjs_order, integ.M, integ.M_inv, integ._masses,
-                    integ.GM_B, integ.GM_C, integ.GM_planets,
-                    integ.G, integ.N_planets, dt,
-                    chunk_steps, output_every_n,
-                    buf_pos, buf_vel, buf_t, t0 + steps_done * dt,
-                )
+                if isinstance(self.integrator, WisdomHolman_SC_P):
+                    actual_snaps = _dkd_loop(
+                        self.particles._pos, self.particles._vel,
+                        integ.hjs_order, integ.M, integ.M_inv, integ._masses,
+                        integ.GM_B, integ.GM_C, integ.GM_planets,
+                        integ.G, integ.N_planets, dt,
+                        chunk_steps, output_every_n,
+                        buf_pos, buf_vel, buf_t, t0 + steps_done * dt,
+                    )
+
+                else:
+                    actual_snaps = _dkd_loop2(
+                        self.particles._pos, self.particles._vel,
+                        integ.hjs_order, integ.M, integ.M_inv, integ._masses,
+                        integ.GM_C, integ.GM_planets,
+                        integ.G, integ.N_planets, dt,
+                        chunk_steps, output_every_n,
+                        buf_pos, buf_vel, buf_t, t0 + steps_done * dt,
+                    )
 
                 for s in range(actual_snaps):
                     self.dataio.store_state(

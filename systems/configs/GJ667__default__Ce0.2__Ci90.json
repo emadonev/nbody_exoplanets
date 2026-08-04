@@ -1,0 +1,63 @@
+{
+  "run_id": "GJ667__default__Ce0.2__Ci90",
+  "system": "GJ667",
+  "set": "default",
+  "reference_frame": "mutual",
+  "t_ref_bjd": 2454446.1,
+  "integration": {
+    "tspan_yr": 10000000.0,
+    "out_cadence_yr": 100
+  },
+  "active_planets": [
+    "b",
+    "c"
+  ],
+  "bodies": {
+    "AB": {
+      "role": "perturber",
+      "mass_msun": 1.27
+    },
+    "C": {
+      "role": "host",
+      "mass_msun": 0.327,
+      "orbit": {
+        "primary": "AB",
+        "a_au": 235.0,
+        "e": 0.2,
+        "inc_rad": 1.5707963267948966,
+        "Omega_rad": 0.0,
+        "omega_rad": 0.0,
+        "theta0_rad": 1.7721542475852274,
+        "period_yr": 2850.685687983136
+      }
+    },
+    "b": {
+      "role": "planet",
+      "mass_msun": 1.6819544310488788e-05,
+      "orbit": {
+        "primary": "C",
+        "a_au": 0.05027447260611185,
+        "e": 0.15,
+        "inc_rad": 0.0,
+        "Omega_rad": 0.0,
+        "omega_rad": 0.20943951023931956,
+        "theta0_rad": 0.0,
+        "period_yr": 0.01971225188227242
+      }
+    },
+    "c": {
+      "role": "planet",
+      "mass_msun": 1.2314309227322148e-05,
+      "orbit": {
+        "primary": "C",
+        "a_au": 0.12462316192616983,
+        "e": 0.27,
+        "inc_rad": 0.0,
+        "Omega_rad": 0.0,
+        "omega_rad": 2.443460952792061,
+        "theta0_rad": 2.892773024477975,
+        "period_yr": 0.07693360711841205
+      }
+    }
+  }
+}
